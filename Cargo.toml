@@ -1,0 +1,10 @@
+[package]
+name = "avert-devops"
+version = "0.0.0"
+authors = [ "James Pharaoh <james@wellbehavedsoftware.com>" ]
+
+[[bin]]
+name = "backup-daemon"
+
+[dependencies.time]
+git = "https://github.com/rust-lang/time"

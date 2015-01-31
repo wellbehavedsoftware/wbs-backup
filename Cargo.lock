@@ -1,0 +1,26 @@
+[root]
+name = "avert-devops"
+version = "0.0.0"
+dependencies = [
+ "time 0.1.15 (git+https://github.com/rust-lang/time)",
+]
+
+[[package]]
+name = "gcc"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "libc"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "time"
+version = "0.1.15"
+source = "git+https://github.com/rust-lang/time#e216d0de7377a1ae5c8617f6e1a9f60dc61d7ec7"
+dependencies = [
+ "gcc 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
