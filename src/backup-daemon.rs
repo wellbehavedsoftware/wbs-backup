@@ -20,6 +20,7 @@ use std::old_io::process::Command;
 use std::old_io::process::ProcessExit;
 use std::old_io::timer::sleep;
 use std::option::*;
+use std::os;
 use std::os::unix::prelude::*;
 use std::time::Duration;
 
@@ -31,12 +32,16 @@ use SyncState::*;
 mod flock;
 
 macro_rules! log {
+
 	($($arg:tt)*) => {
+
 		println! (
 			"{}: {}",
 			time_format_pretty (time::get_time ()),
 			format! ($($arg)*))
+
 	}
+
 }
 
 enum SyncState {
@@ -47,7 +52,9 @@ enum SyncState {
 }
 
 impl SyncState {
+
 	fn from_string (str: &str) -> SyncState {
+
 		match str {
 			"idle" => { Idle }
 			"syncing" => { Syncing }
@@ -55,87 +62,148 @@ impl SyncState {
 			"exporting" => { Exporting }
 			_ => { panic! ("err") }
 		}
+
 	}
+
 }
 
 impl ToString for SyncState {
+
 	fn to_string (&self) -> String {
+
 		match *self {
 			Idle => { "idle".to_string () }
 			Syncing => { "syncing".to_string () }
 			Snapshotting => { "snapshotting".to_string () }
 			Exporting => { "exporting".to_string () }
 		}
+
 	}
+
 }
 
 #[derive(Encodable,Decodable)]
 struct DiskState {
+
 	state: String,
 	last_sync: Option<String>,
 	last_snapshot: Option<String>,
+
 }
 
 #[derive(Encodable,Decodable)]
 struct DiskConfig {
+
+	state: String,
+
 	sync_script: Option<String>,
+	sync_log: Option<String>,
+
 	snapshot_script: Option<String>,
+	snapshot_log: Option<String>,
+
 }
 
 struct ProgState {
+
 	config: DiskConfig,
 	state: SyncState,
 	last_sync: Option<Timespec>,
 	last_snapshot: Option<Timespec>,
+
 }
 
 impl ProgState {
 
-	fn read_state () -> ProgState {
+	fn read_state (
+		config_path: &Path
+	) -> ProgState {
 
-		let config = DiskConfig {
-			sync_script: Some ("./sync-script".to_string ()),
-			snapshot_script: Some ("./snapshot-script".to_string ()),
-		};
+		log! ("loading config");
 
-		let state_path = Path::new ("sync-old-server.state");
+		let config_json =
+			File::open (
+				&config_path
+			).read_to_string ().unwrap_or_else (
+				|err|
+
+				panic! (
+					"error reading config {}: {}",
+					config_path.display (),
+					err)
+
+			);
+
+		let config: DiskConfig =
+			json::decode (
+				config_json.as_slice ()
+			).unwrap_or_else (
+				|err|
+
+				panic! (
+					"error reading config {}: (todo)",
+					config_path.display ())
+
+			);
+
+		let state_path =
+			Path::new (&config.state);
 
 		if state_path.exists () {
 
 			log! ("load existing state");
 
 			let state_json =
-				File::open (&state_path).read_to_string ().unwrap_or_else (
-					|err| panic! (
+				File::open (
+					&state_path
+				).read_to_string ().unwrap_or_else (
+					|err|
+
+					panic! (
 						"error reading state {}: {}",
 						state_path.display (),
-						err));
+						err)
+
+				);
 
 			let state_data: DiskState =
-				json::decode (state_json.as_slice ()).unwrap_or_else (
-					|err| panic! (
+				json::decode (
+					state_json.as_slice ()
+				).unwrap_or_else (
+					|err|
+
+					panic! (
 						"error reading state {}: (todo)",
-						state_path.display ()));
+						state_path.display ())
+
+				);
 
 			let new = ProgState {
+
 				config: config,
+
 				state: SyncState::from_string (
 					state_data.state.as_slice ()),
+
 				last_sync: state_data.last_sync.map (
 					|n| time_parse (n.as_slice ())),
+
 				last_snapshot: state_data.last_snapshot.map (
 					|n| time_parse (n.as_slice ())),
+
 			};
 
 			log! ("state: {}", new.state.to_string ());
 
-			log! ("last sync: {}", new.last_sync.map_or (
-				"none".to_string (),
-				|n| time_format_pretty (n)));
+			log! ("last sync: {}",
+				new.last_sync.map_or (
+					"none".to_string (),
+					|n| time_format_pretty (n)));
 
-			log! ("last snapshot: {}", new.last_snapshot.map_or (
-				"none".to_string (),
-				|n| time_format_pretty (n)));
+			log! ("last snapshot: {}",
+				new.last_snapshot.map_or (
+					"none".to_string (),
+					|n| time_format_pretty (n)));
 
 			return new;
 
@@ -154,7 +222,11 @@ impl ProgState {
 
 	}
 
-	fn write_state_temp (&mut self, state_path_temp: &Path, state_json: &str) -> IoResult<()> {
+	fn write_state_temp (
+		&mut self,
+		state_path_temp: &Path,
+		state_json: &str
+	) -> IoResult<()> {
 
 		let mut file = try! { File::create (state_path_temp) };
 		try! { file.write_str (state_json.to_string ().as_slice ()) }
@@ -165,38 +237,56 @@ impl ProgState {
 
 	}
 
-	fn write_state (&mut self) {
+	fn write_state (
+		&mut self
+	) {
 
 		let disk_state = DiskState {
+
 			state: self.state.to_string (),
+
 			last_sync: self.last_sync.map (
 				|n| time_format_pretty (n).to_string ()),
+
 			last_snapshot: self.last_snapshot.map (
 				|n| time_format_pretty (n).to_string ()),
+
 		};
 
-		let state_json = json::encode (&disk_state).unwrap ();
+		let state_json =
+			json::encode (&disk_state).unwrap ();
 
-		let state_path = Path::new ("sync-old-server.state");
-		let state_path_temp = Path::new ("sync-old-server.state.temp");
+		let state_path =
+			Path::new (self.config.state.clone ());
+
+		let state_path_temp =
+			Path::new (format! ("{}.temp", self.config.state));
 
 		self.write_state_temp (
 			&state_path_temp,
 			state_json.as_slice ()
 		).unwrap_or_else (
-			|err| panic! (
+			|err|
+
+			panic! (
 				"error writing state {}: {}",
 				state_path_temp.display (),
-				err));
+				err)
+
+		);
 
 		fs::rename (
 			&state_path_temp,
 			&state_path
 		).unwrap_or_else (
-			|err| panic! (
+			|err|
+
+			panic! (
 				"error writing state {}: {}",
 				state_path.display (),
-				err));
+				err)
+
+		);
 
 	}
 
@@ -250,22 +340,27 @@ impl ProgState {
 		&self,
 		name: &str,
 		script: &str,
+		log: &str,
 		time: &str
 	) -> ProcessExit {
 
 		let output_path =
 			Path::new (format! (
 				"{}-{}.log",
-				name,
+				log,
 				time));
 
 		let output_file =
 			File::create (&output_path).unwrap_or_else (
-				|err| panic! (
+				|err| 
+				
+				panic! (
 					"error creating {} log {}: {}",
 					name,
 					output_path.display (),
-					err));
+					err)
+			
+			);
 
 		let mut process =
 			Command::new (script)
@@ -275,92 +370,137 @@ impl ProgState {
 			.stderr (process::InheritFd (output_file.as_raw_fd ()))
 			.spawn ()
 			.unwrap_or_else (
-				|err| panic! (
+				|err|
+				
+				panic! (
 					"error running script {}: {}",
 					script,
-					err));
+					err)
+
+			);
 
 		process.wait ().unwrap_or_else (
-			|err| panic! (
+			|err|
+			
+			panic! (
 				"error running script {}: {}",
 				script,
-				err))
+				err)
+
+		)
 
 	}
 
 	fn do_sync (&mut self, sync_time: Timespec) {
 
-		log! (
-			"sync started for {}",
-			time_format_pretty (sync_time));
+		if self.config.sync_script.is_some () {
 
-		self.state = Syncing;
-		self.write_state ();
+			log! (
+				"sync started for {}",
+				time_format_pretty (sync_time));
 
-		let exit_status =
-			self.run_script (
-				"sync",
-				self.config.sync_script.clone ().unwrap ().as_slice (),
-				time_format_hour (sync_time).as_slice ());
+			self.state = Syncing;
+			self.write_state ();
 
-		self.state = Idle;
-		self.last_sync = Some (sync_time);
-		self.write_state ();
+			let exit_status =
+				self.run_script (
+					"sync",
+					self.config.sync_script.clone ().unwrap ().as_slice (),
+					self.config.sync_log.clone ().unwrap ().as_slice (),
+					time_format_hour (sync_time).as_slice ());
 
-		log! (
-			"sync {}",
-			exit_report (exit_status));
+			log! (
+				"sync {}",
+				exit_report (exit_status));
+
+			self.state = Idle;
+			self.last_sync = Some (sync_time);
+			self.write_state ();
+
+		} else {
+
+			log! (
+				"sync skipped for {}",
+				time_format_pretty (sync_time));
+
+			self.last_sync = Some (sync_time);
+			self.write_state ();
+
+		}
 
 	}
 
 	fn do_snapshot (&mut self, snapshot_time: Timespec) {
 
-		log! (
-			"snapshot started for {}",
-			time_format_pretty (snapshot_time));
+		if self.config.snapshot_script.is_some () {
 
-		self.state = Snapshotting;
-		self.write_state ();
+			log! (
+				"snapshot started for {}",
+				time_format_pretty (snapshot_time));
 
-		let exit_status =
-			self.run_script (
-				"snapshot",
-				self.config.snapshot_script.clone ().unwrap ().as_slice (),
-				time_format_day (snapshot_time).as_slice ());
+			self.state = Snapshotting;
+			self.write_state ();
 
-		self.state = Idle;
-		self.last_snapshot = Some (snapshot_time);
-		self.write_state ();
+			let exit_status =
+				self.run_script (
+					"snapshot",
+					self.config.snapshot_script.clone ().unwrap ().as_slice (),
+					self.config.snapshot_log.clone ().unwrap ().as_slice (),
+					time_format_day (snapshot_time).as_slice ());
 
-		log! (
-			"snapshot {}",
-			exit_report (exit_status));
+			log! (
+				"snapshot {}",
+				exit_report (exit_status));
+
+			self.state = Idle;
+			self.last_snapshot = Some (snapshot_time);
+			self.write_state ();
+
+		} else {
+
+			log! (
+				"snapshot skipped for {}",
+				time_format_pretty (snapshot_time));
+
+			self.last_snapshot = Some (snapshot_time);
+			self.write_state ();
+
+		}
+
 
 	}
 
 }
 
 fn exit_report (process_exit: ProcessExit) -> String {
+
 	match process_exit {
+
 		ProcessExit::ExitStatus (status) => {
 			format! ("ended with status {}", status)
 		}
+
 		ProcessExit::ExitSignal (signal) => {
 			format! ("terminated by signal {}", signal)
 		}
+
 	}
+
 }
 
 fn round_down_hour (now: Timespec) -> Timespec {
+
 	Tm {
 		tm_min: 0,
 		tm_sec: 0,
 		tm_nsec: 0,
 		..time::at_utc (now)
 	}.to_timespec ()
+
 }
 
 fn round_down_day (now: Timespec) -> Timespec {
+
 	Tm {
 		tm_hour: 0,
 		tm_min: 0,
@@ -368,33 +508,76 @@ fn round_down_day (now: Timespec) -> Timespec {
 		tm_nsec: 0,
 		..time::at_utc (now)
 	}.to_timespec ()
+
 }
 
 fn time_format_pretty (when: Timespec) -> String {
-	time::strftime ("%Y-%m-%d %H:%M:%S", &time::at_utc (when)).unwrap ()
+
+	time::strftime (
+		"%Y-%m-%d %H:%M:%S",
+		&time::at_utc (when)
+	).unwrap ()
+
 }
 
 fn time_format_day (when: Timespec) -> String {
-	time::strftime ("%Y-%m-%d", &time::at_utc (when)).unwrap ()
+
+	time::strftime (
+		"%Y-%m-%d",
+		&time::at_utc (when)
+	).unwrap ()
+
 }
 
 fn time_format_hour (when: Timespec) -> String {
-	time::strftime ("%Y-%m-%d-%H", &time::at_utc (when)).unwrap ()
+
+	time::strftime (
+		"%Y-%m-%d-%H",
+		&time::at_utc (when)
+	).unwrap ()
+
 }
 
 fn time_parse (str: &str) -> Timespec {
-	time::strptime (str, "%Y-%m-%d %H:%M:%S").unwrap ().to_timespec ()
+
+	time::strptime (
+		str,
+		"%Y-%m-%d %H:%M:%S"
+	).unwrap ().to_timespec ()
+
 }
 
 fn main () {
 
+	// check args
+
+	let args = os::args ();
+
+	if args.len () != 2 {
+		println! ("Syntax error");
+		return;
+	}
+
+	let config_path =
+		Path::new (args [1].clone ());
+
+	// obtain lock
+	// TODO move this
+
 	let lock_path = Path::new ("sync-old-server.lock");
 	Lock::new (&lock_path);
 
-	let mut prog_state = ProgState::read_state ();
+	// init program
+
+	let mut prog_state =
+		ProgState::read_state (&config_path);
 
 	log! ("ready");
 
+	// run program
+
 	prog_state.main_loop ();
+
+	// (never reach here)
 
 }
