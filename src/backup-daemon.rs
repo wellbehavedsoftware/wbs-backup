@@ -83,18 +83,27 @@ impl ToString for SyncState {
 }
 
 #[derive(Encodable,Decodable)]
-struct DiskState {
+struct DiskJobState {
 
+	name: String,
 	state: String,
+
 	last_sync: Option<String>,
 	last_snapshot: Option<String>,
 
 }
 
 #[derive(Encodable,Decodable)]
-struct DiskConfig {
+struct DiskState {
 
-	state: String,
+	jobs: Vec<DiskJobState>,
+
+}
+
+#[derive(Encodable,Decodable)]
+struct DiskJobConfig {
+
+	name: String,
 
 	sync_script: Option<String>,
 	sync_log: Option<String>,
@@ -104,16 +113,78 @@ struct DiskConfig {
 
 }
 
-struct ProgState {
+#[derive(Encodable,Decodable)]
+struct DiskConfig {
 
-	config: DiskConfig,
+	state: String,
+	lock: String,
+
+	jobs: Vec<DiskJobConfig>,
+
+}
+
+struct JobState {
+
+	name: String,
 	state: SyncState,
+
 	last_sync: Option<Timespec>,
 	last_snapshot: Option<Timespec>,
 
 }
 
+struct ProgState {
+
+	config: DiskConfig,
+	jobs: Vec<JobState>,
+
+}
+
 impl ProgState {
+
+	fn read_job_state (
+		disk_state: & DiskState,
+		job_config: & DiskJobConfig,
+	) -> JobState {
+
+		match disk_state.jobs.iter ().find (
+			|elem| elem.name == job_config.name
+		) {
+
+			None => {
+				JobState {
+					name: job_config.name.clone (),
+					state: Idle,
+					last_sync: None,
+					last_snapshot: None,
+				}
+			}
+
+			Some (disk_job_state) => {
+				JobState {
+					name: job_config.name.clone (),
+					state: SyncState::from_string (& disk_job_state.state),
+					last_sync: time_parse_opt (& disk_job_state.last_sync),
+					last_snapshot: time_parse_opt (& disk_job_state.last_snapshot),
+				}
+			}
+
+		}
+
+	}
+
+	fn write_job_state (
+		job_state: &JobState
+	) -> DiskJobState {
+
+		DiskJobState {
+			name: job_state.name.clone (),
+			state: job_state.state.to_string (),
+			last_sync: time_format_pretty_opt (job_state.last_sync),
+			last_snapshot: time_format_pretty_opt (job_state.last_snapshot),
+		}
+
+	}
 
 	fn read_state (
 		config_path: &Path
@@ -166,7 +237,7 @@ impl ProgState {
 
 				);
 
-			let state_data: DiskState =
+			let disk_state: DiskState =
 				json::decode (
 					state_json.as_slice ()
 				).unwrap_or_else (
@@ -178,32 +249,20 @@ impl ProgState {
 
 				);
 
+			let jobs_temp =
+				config.jobs.iter ().map (
+					|job_config|
+
+					ProgState::read_job_state (
+						& disk_state,
+						job_config)
+
+				).collect ();
+
 			let new = ProgState {
-
 				config: config,
-
-				state: SyncState::from_string (
-					state_data.state.as_slice ()),
-
-				last_sync: state_data.last_sync.map (
-					|n| time_parse (n.as_slice ())),
-
-				last_snapshot: state_data.last_snapshot.map (
-					|n| time_parse (n.as_slice ())),
-
+				jobs: jobs_temp,
 			};
-
-			log! ("state: {}", new.state.to_string ());
-
-			log! ("last sync: {}",
-				new.last_sync.map_or (
-					"none".to_string (),
-					|n| time_format_pretty (n)));
-
-			log! ("last snapshot: {}",
-				new.last_snapshot.map_or (
-					"none".to_string (),
-					|n| time_format_pretty (n)));
 
 			return new;
 
@@ -211,11 +270,21 @@ impl ProgState {
 
 			log! ("no existing state");
 
+			let jobs_temp = config.jobs.iter ().map (
+				|job_config|
+
+				JobState {
+					name: job_config.name.clone (),
+					state: Idle,
+					last_sync: None,
+					last_snapshot: None,
+				}
+
+			).collect ();
+
 			return ProgState {
 				config: config,
-				state: Idle,
-				last_sync: None,
-				last_snapshot: None,
+				jobs: jobs_temp,
 			};
 
 		}
@@ -243,13 +312,9 @@ impl ProgState {
 
 		let disk_state = DiskState {
 
-			state: self.state.to_string (),
-
-			last_sync: self.last_sync.map (
-				|n| time_format_pretty (n).to_string ()),
-
-			last_snapshot: self.last_snapshot.map (
-				|n| time_format_pretty (n).to_string ()),
+			jobs: self.jobs.iter ().map (
+				|job_state| ProgState::write_job_state (& job_state)
+			).collect (),
 
 		};
 
@@ -290,41 +355,39 @@ impl ProgState {
 
 	}
 
-	fn loop_once (&mut self) {
-
-		match self.state {
-			Idle => { },
-			_ => {
-
-				log! (
-					"warning: previous state was {}",
-					self.state.to_string ());
-
-				self.state = Idle;
-
-			}
-		}
+	fn loop_job (
+		&mut self,
+		job_index: usize,
+	) {
 
 		let now = time::get_time ();
 		let last_hour = round_down_hour (now);
 		let last_day = round_down_day (now);
 
-		match self.last_sync {
-			None => { self.do_sync (last_hour) }
+		match self.jobs [job_index].last_sync {
+			None => { self.do_sync (job_index, last_hour) }
 			Some (last_sync) => match last_sync.cmp (&last_hour) {
-				Ordering::Less => { self.do_sync (last_hour) }
+				Ordering::Less => { self.do_sync (job_index, last_hour) }
 				Ordering::Equal => { return }
 				Ordering::Greater => { panic! ("last sync is in future") }
 			}
 		}
 
-		match self.last_snapshot {
-			None => { self.do_snapshot (last_day) }
+		match self.jobs [job_index].last_snapshot {
+			None => { self.do_snapshot (job_index, last_day) }
 			Some (last_snapshot) => match last_snapshot.cmp (&last_day) {
-				Ordering::Less => { self.do_snapshot (last_day) }
+				Ordering::Less => { self.do_snapshot (job_index, last_day) }
 				Ordering::Equal => { return }
 				Ordering::Greater => { panic! ("last snapshot is in future") }
 			}
+		}
+
+	}
+
+	fn loop_once (&mut self) {
+
+		for i in range (0, self.jobs.len ()) {
+			self.loop_job (i)
 		}
 
 	}
@@ -391,30 +454,34 @@ impl ProgState {
 
 	}
 
-	fn do_sync (&mut self, sync_time: Timespec) {
+	fn do_sync (
+		&mut self,
+		job_index: usize,
+		sync_time: Timespec
+	) {
 
-		if self.config.sync_script.is_some () {
+		if self.config.jobs [job_index].sync_script.is_some () {
 
 			log! (
 				"sync started for {}",
 				time_format_pretty (sync_time));
 
-			self.state = Syncing;
+			self.jobs [job_index].state = Syncing;
 			self.write_state ();
 
 			let exit_status =
 				self.run_script (
 					"sync",
-					self.config.sync_script.clone ().unwrap ().as_slice (),
-					self.config.sync_log.clone ().unwrap ().as_slice (),
+					self.config.jobs [job_index].sync_script.clone ().unwrap ().as_slice (),
+					self.config.jobs [job_index].sync_log.clone ().unwrap ().as_slice (),
 					time_format_hour (sync_time).as_slice ());
 
 			log! (
 				"sync {}",
 				exit_report (exit_status));
 
-			self.state = Idle;
-			self.last_sync = Some (sync_time);
+			self.jobs [job_index].state = Idle;
+			self.jobs [job_index].last_sync = Some (sync_time);
 			self.write_state ();
 
 		} else {
@@ -423,37 +490,41 @@ impl ProgState {
 				"sync skipped for {}",
 				time_format_pretty (sync_time));
 
-			self.last_sync = Some (sync_time);
+			self.jobs [job_index].last_sync = Some (sync_time);
 			self.write_state ();
 
 		}
 
 	}
 
-	fn do_snapshot (&mut self, snapshot_time: Timespec) {
+	fn do_snapshot (
+		&mut self,
+		job_index: usize,
+		snapshot_time: Timespec
+	) {
 
-		if self.config.snapshot_script.is_some () {
+		if self.config.jobs [job_index].snapshot_script.is_some () {
 
 			log! (
 				"snapshot started for {}",
 				time_format_pretty (snapshot_time));
 
-			self.state = Snapshotting;
+			self.jobs [job_index].state = Snapshotting;
 			self.write_state ();
 
 			let exit_status =
 				self.run_script (
 					"snapshot",
-					self.config.snapshot_script.clone ().unwrap ().as_slice (),
-					self.config.snapshot_log.clone ().unwrap ().as_slice (),
+					self.config.jobs [job_index].snapshot_script.clone ().unwrap ().as_slice (),
+					self.config.jobs [job_index].snapshot_log.clone ().unwrap ().as_slice (),
 					time_format_day (snapshot_time).as_slice ());
 
 			log! (
 				"snapshot {}",
 				exit_report (exit_status));
 
-			self.state = Idle;
-			self.last_snapshot = Some (snapshot_time);
+			self.jobs [job_index].state = Idle;
+			self.jobs [job_index].last_snapshot = Some (snapshot_time);
 			self.write_state ();
 
 		} else {
@@ -462,7 +533,7 @@ impl ProgState {
 				"snapshot skipped for {}",
 				time_format_pretty (snapshot_time));
 
-			self.last_snapshot = Some (snapshot_time);
+			self.jobs [job_index].last_snapshot = Some (snapshot_time);
 			self.write_state ();
 
 		}
@@ -520,6 +591,17 @@ fn time_format_pretty (when: Timespec) -> String {
 
 }
 
+fn time_format_pretty_opt (
+	when_opt: Option<Timespec>
+) -> Option<String> {
+
+	match when_opt {
+		None => None,
+		Some (when) => Some (time_format_pretty (when)),
+	}
+
+}
+
 fn time_format_day (when: Timespec) -> String {
 
 	time::strftime (
@@ -544,6 +626,17 @@ fn time_parse (str: &str) -> Timespec {
 		str,
 		"%Y-%m-%d %H:%M:%S"
 	).unwrap ().to_timespec ()
+
+}
+
+fn time_parse_opt (
+	opt_str: & Option<String>
+) -> Option<Timespec> {
+
+	match opt_str {
+		& None => { None },
+		& Some (ref val) => { Some (time_parse (val.as_slice ())) },
+	}
 
 }
 
@@ -575,6 +668,8 @@ fn main () {
 	log! ("ready");
 
 	// run program
+
+	prog_state.write_state ();
 
 	prog_state.main_loop ();
 
