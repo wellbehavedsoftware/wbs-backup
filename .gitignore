@@ -2,3 +2,4 @@
 /backup-daemon.state
 /snapshot-script
 /target
+/*.log

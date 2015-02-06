@@ -256,7 +256,7 @@ impl ProgState {
 
 			let state_json =
 				File::open (
-					&state_path
+					& state_path,
 				).read_to_string ().unwrap_or_else (
 					|err|
 
