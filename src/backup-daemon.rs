@@ -1,16 +1,23 @@
 #![crate_name = "backup-daemon"]
 #![crate_type = "bin"]
 
-#![allow(unstable)]
+#![feature (core)]
+#![feature (env)]
+#![feature (io)]
+#![feature (libc)]
+#![feature (os)]
+#![feature (path)]
+#![feature (std_misc)]
 
-extern crate serialize;
+extern crate "rustc-serialize" as rustc_serialize;
 extern crate time;
 
 use flock::Lock;
 
-use serialize::json;
+use rustc_serialize::json;
 
 use std::cmp::Ordering;
+use std::env;
 use std::old_io::File;
 use std::old_io::IoResult;
 use std::old_io::fs;
@@ -20,7 +27,6 @@ use std::old_io::process::Command;
 use std::old_io::process::ProcessExit;
 use std::old_io::timer::sleep;
 use std::option::*;
-use std::os;
 use std::os::unix::prelude::*;
 use std::time::Duration;
 
@@ -69,7 +75,7 @@ impl SyncState {
 
 impl ToString for SyncState {
 
-	fn to_string (&self) -> String {
+	fn to_string (& self) -> String {
 
 		match *self {
 			Idle => { "idle".to_string () }
@@ -82,44 +88,44 @@ impl ToString for SyncState {
 
 }
 
-#[derive(Encodable,Decodable)]
+#[derive (RustcEncodable, RustcDecodable)]
 struct DiskJobState {
 
 	name: String,
 	state: String,
 
-	last_sync: Option<String>,
-	last_snapshot: Option<String>,
+	last_sync: Option <String>,
+	last_snapshot: Option <String>,
 
 }
 
-#[derive(Encodable,Decodable)]
+#[derive (RustcEncodable, RustcDecodable)]
 struct DiskState {
 
-	jobs: Vec<DiskJobState>,
+	jobs: Vec <DiskJobState>,
 
 }
 
-#[derive(Encodable,Decodable)]
+#[derive (RustcEncodable, RustcDecodable)]
 struct DiskJobConfig {
 
 	name: String,
 
-	sync_script: Option<String>,
-	sync_log: Option<String>,
+	sync_script: Option <String>,
+	sync_log: Option <String>,
 
-	snapshot_script: Option<String>,
-	snapshot_log: Option<String>,
+	snapshot_script: Option <String>,
+	snapshot_log: Option <String>,
 
 }
 
-#[derive(Encodable,Decodable)]
+#[derive (RustcEncodable, RustcDecodable)]
 struct DiskConfig {
 
 	state: String,
 	lock: String,
 
-	jobs: Vec<DiskJobConfig>,
+	jobs: Vec <DiskJobConfig>,
 
 }
 
@@ -128,15 +134,15 @@ struct JobState {
 	name: String,
 	state: SyncState,
 
-	last_sync: Option<Timespec>,
-	last_snapshot: Option<Timespec>,
+	last_sync: Option <Timespec>,
+	last_snapshot: Option <Timespec>,
 
 }
 
 struct ProgState {
 
 	config: DiskConfig,
-	jobs: Vec<JobState>,
+	jobs: Vec <JobState>,
 
 }
 
@@ -162,10 +168,18 @@ impl ProgState {
 
 			Some (disk_job_state) => {
 				JobState {
+
 					name: job_config.name.clone (),
-					state: SyncState::from_string (& disk_job_state.state),
-					last_sync: time_parse_opt (& disk_job_state.last_sync),
-					last_snapshot: time_parse_opt (& disk_job_state.last_snapshot),
+
+					state: SyncState::from_string (
+						& disk_job_state.state),
+
+					last_sync: time_parse_opt (
+						& disk_job_state.last_sync),
+
+					last_snapshot: time_parse_opt (
+						& disk_job_state.last_snapshot),
+
 				}
 			}
 
@@ -174,7 +188,7 @@ impl ProgState {
 	}
 
 	fn write_job_state (
-		job_state: &JobState
+		job_state: & JobState,
 	) -> DiskJobState {
 
 		DiskJobState {
@@ -187,7 +201,7 @@ impl ProgState {
 	}
 
 	fn read_state (
-		config_path: &Path
+		config_path: & Path,
 	) -> ProgState {
 
 		log! ("loading config");
@@ -207,13 +221,14 @@ impl ProgState {
 
 		let config: DiskConfig =
 			json::decode (
-				config_json.as_slice ()
+				& config_json,
 			).unwrap_or_else (
 				|err|
 
 				panic! (
-					"error reading config {}: (todo)",
-					config_path.display ())
+					"error reading config {}: {}",
+					config_path.display (),
+					err)
 
 			);
 
@@ -239,13 +254,14 @@ impl ProgState {
 
 			let disk_state: DiskState =
 				json::decode (
-					state_json.as_slice ()
+					& state_json
 				).unwrap_or_else (
 					|err|
 
 					panic! (
-						"error reading state {}: (todo)",
-						state_path.display ())
+						"error reading state {}: {}",
+						state_path.display (),
+						err)
 
 				);
 
@@ -298,7 +314,7 @@ impl ProgState {
 	) -> IoResult<()> {
 
 		let mut file = try! { File::create (state_path_temp) };
-		try! { file.write_str (state_json.to_string ().as_slice ()) }
+		try! { file.write_str (& state_json.to_string ()) }
 		try! { file.write_str ("\n") }
 		try! { file.fsync () }
 
@@ -319,7 +335,7 @@ impl ProgState {
 		};
 
 		let state_json =
-			json::encode (&disk_state).unwrap ();
+			json::encode (& disk_state).unwrap ();
 
 		let state_path =
 			Path::new (self.config.state.clone ());
@@ -328,8 +344,8 @@ impl ProgState {
 			Path::new (format! ("{}.temp", self.config.state));
 
 		self.write_state_temp (
-			&state_path_temp,
-			state_json.as_slice ()
+			& state_path_temp,
+			& state_json,
 		).unwrap_or_else (
 			|err|
 
@@ -386,7 +402,7 @@ impl ProgState {
 
 	fn loop_once (&mut self) {
 
-		for i in range (0, self.jobs.len ()) {
+		for i in 0 .. self.jobs.len () {
 			self.loop_job (i)
 		}
 
@@ -463,7 +479,8 @@ impl ProgState {
 		if self.config.jobs [job_index].sync_script.is_some () {
 
 			log! (
-				"sync started for {}",
+				"sync started for {} {}",
+				self.config.jobs [job_index].name,
 				time_format_pretty (sync_time));
 
 			self.jobs [job_index].state = Syncing;
@@ -472,12 +489,13 @@ impl ProgState {
 			let exit_status =
 				self.run_script (
 					"sync",
-					self.config.jobs [job_index].sync_script.clone ().unwrap ().as_slice (),
-					self.config.jobs [job_index].sync_log.clone ().unwrap ().as_slice (),
-					time_format_hour (sync_time).as_slice ());
+					& self.config.jobs [job_index].sync_script.clone ().unwrap (),
+					& self.config.jobs [job_index].sync_log.clone ().unwrap (),
+					& time_format_hour (sync_time));
 
 			log! (
-				"sync {}",
+				"sync for {} {}",
+				self.config.jobs [job_index].name,
 				exit_report (exit_status));
 
 			self.jobs [job_index].state = Idle;
@@ -487,7 +505,8 @@ impl ProgState {
 		} else {
 
 			log! (
-				"sync skipped for {}",
+				"sync skipped for {} {}",
+				self.config.jobs [job_index].name,
 				time_format_pretty (sync_time));
 
 			self.jobs [job_index].last_sync = Some (sync_time);
@@ -506,7 +525,8 @@ impl ProgState {
 		if self.config.jobs [job_index].snapshot_script.is_some () {
 
 			log! (
-				"snapshot started for {}",
+				"snapshot started for {} {}",
+				self.config.jobs [job_index].name,
 				time_format_pretty (snapshot_time));
 
 			self.jobs [job_index].state = Snapshotting;
@@ -515,12 +535,13 @@ impl ProgState {
 			let exit_status =
 				self.run_script (
 					"snapshot",
-					self.config.jobs [job_index].snapshot_script.clone ().unwrap ().as_slice (),
-					self.config.jobs [job_index].snapshot_log.clone ().unwrap ().as_slice (),
-					time_format_day (snapshot_time).as_slice ());
+					& self.config.jobs [job_index].snapshot_script.clone ().unwrap (),
+					& self.config.jobs [job_index].snapshot_log.clone ().unwrap (),
+					& time_format_day (snapshot_time));
 
 			log! (
-				"snapshot {}",
+				"snapshot for {} {}",
+				self.config.jobs [job_index].name,
 				exit_report (exit_status));
 
 			self.jobs [job_index].state = Idle;
@@ -530,7 +551,8 @@ impl ProgState {
 		} else {
 
 			log! (
-				"snapshot skipped for {}",
+				"snapshot skipped for {} {}",
+				self.config.jobs [job_index].name,
 				time_format_pretty (snapshot_time));
 
 			self.jobs [job_index].last_snapshot = Some (snapshot_time);
@@ -606,7 +628,7 @@ fn time_format_day (when: Timespec) -> String {
 
 	time::strftime (
 		"%Y-%m-%d",
-		&time::at_utc (when)
+		& time::at_utc (when),
 	).unwrap ()
 
 }
@@ -615,7 +637,7 @@ fn time_format_hour (when: Timespec) -> String {
 
 	time::strftime (
 		"%Y-%m-%d-%H",
-		&time::at_utc (when)
+		& time::at_utc (when),
 	).unwrap ()
 
 }
@@ -624,18 +646,18 @@ fn time_parse (str: &str) -> Timespec {
 
 	time::strptime (
 		str,
-		"%Y-%m-%d %H:%M:%S"
+		"%Y-%m-%d %H:%M:%S",
 	).unwrap ().to_timespec ()
 
 }
 
 fn time_parse_opt (
-	opt_str: & Option<String>
-) -> Option<Timespec> {
+	opt_str: & Option <String>
+) -> Option <Timespec> {
 
 	match opt_str {
 		& None => { None },
-		& Some (ref val) => { Some (time_parse (val.as_slice ())) },
+		& Some (ref val) => { Some (time_parse (& val)) },
 	}
 
 }
@@ -644,7 +666,10 @@ fn main () {
 
 	// check args
 
-	let args = os::args ();
+	let args: Vec <String> =
+		env::args ().map (
+			|os_str| os_str.into_string ().unwrap ()
+		).collect ();
 
 	if args.len () != 2 {
 		println! ("Syntax error");
@@ -655,15 +680,20 @@ fn main () {
 		Path::new (args [1].clone ());
 
 	// obtain lock
-	// TODO move this
 
-	let lock_path = Path::new ("sync-old-server.lock");
-	Lock::new (&lock_path);
+	// TODO move this
+	// TODO is this even working?
+	// TODO use configured path
+
+	let lock_path =
+		Path::new ("sync-old-server.lock");
+
+	Lock::new (& lock_path);
 
 	// init program
 
 	let mut prog_state =
-		ProgState::read_state (&config_path);
+		ProgState::read_state (& config_path);
 
 	log! ("ready");
 
