@@ -1,2 +1,4 @@
+/backup-daemon.lock
+/backup-daemon.state
 /snapshot-script
 /target

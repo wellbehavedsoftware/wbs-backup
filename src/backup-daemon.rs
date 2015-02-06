@@ -142,6 +142,9 @@ struct JobState {
 struct ProgState {
 
 	config: DiskConfig,
+
+	lock: Lock,
+
 	jobs: Vec <JobState>,
 
 }
@@ -200,7 +203,7 @@ impl ProgState {
 
 	}
 
-	fn read_state (
+	fn setup (
 		config_path: & Path,
 	) -> ProgState {
 
@@ -232,8 +235,20 @@ impl ProgState {
 
 			);
 
+		// obtain lock
+
+		log! ("obtaining lock");
+
+		let lock_path =
+			Path::new (config.lock.clone ());
+
+		let lock =
+			Lock::new (& lock_path, false);
+
+		// load state
+
 		let state_path =
-			Path::new (&config.state);
+			Path::new (& config.state);
 
 		if state_path.exists () {
 
@@ -277,6 +292,7 @@ impl ProgState {
 
 			let new = ProgState {
 				config: config,
+				lock: lock,
 				jobs: jobs_temp,
 			};
 
@@ -300,6 +316,7 @@ impl ProgState {
 
 			return ProgState {
 				config: config,
+				lock: lock,
 				jobs: jobs_temp,
 			};
 
@@ -679,21 +696,10 @@ fn main () {
 	let config_path =
 		Path::new (args [1].clone ());
 
-	// obtain lock
-
-	// TODO move this
-	// TODO is this even working?
-	// TODO use configured path
-
-	let lock_path =
-		Path::new ("sync-old-server.lock");
-
-	Lock::new (& lock_path);
-
 	// init program
 
 	let mut prog_state =
-		ProgState::read_state (& config_path);
+		ProgState::setup (& config_path);
 
 	log! ("ready");
 
