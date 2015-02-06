@@ -326,11 +326,12 @@ impl ProgState {
 
 	fn write_state_temp (
 		&mut self,
-		state_path_temp: &Path,
-		state_json: &str
+		state_path_temp: & Path,
+		state_json: &str,
 	) -> IoResult<()> {
 
 		let mut file = try! { File::create (state_path_temp) };
+
 		try! { file.write_str (& state_json.to_string ()) }
 		try! { file.write_str ("\n") }
 		try! { file.fsync () }
@@ -340,7 +341,7 @@ impl ProgState {
 	}
 
 	fn write_state (
-		&mut self
+		&mut self,
 	) {
 
 		let disk_state = DiskState {
@@ -433,7 +434,7 @@ impl ProgState {
 	}
 
 	fn run_script (
-		&self,
+		& self,
 		name: &str,
 		script: &str,
 		log: &str,
@@ -447,7 +448,9 @@ impl ProgState {
 				time));
 
 		let output_file =
-			File::create (&output_path).unwrap_or_else (
+			File::create (
+				& output_path
+			).unwrap_or_else (
 				|err| 
 				
 				panic! (
@@ -517,6 +520,7 @@ impl ProgState {
 
 			self.jobs [job_index].state = Idle;
 			self.jobs [job_index].last_sync = Some (sync_time);
+
 			self.write_state ();
 
 		} else {
@@ -527,6 +531,7 @@ impl ProgState {
 				time_format_pretty (sync_time));
 
 			self.jobs [job_index].last_sync = Some (sync_time);
+
 			self.write_state ();
 
 		}
@@ -536,7 +541,7 @@ impl ProgState {
 	fn do_snapshot (
 		&mut self,
 		job_index: usize,
-		snapshot_time: Timespec
+		snapshot_time: Timespec,
 	) {
 
 		if self.config.jobs [job_index].snapshot_script.is_some () {
@@ -547,6 +552,7 @@ impl ProgState {
 				time_format_pretty (snapshot_time));
 
 			self.jobs [job_index].state = Snapshotting;
+
 			self.write_state ();
 
 			let exit_status =
@@ -563,6 +569,7 @@ impl ProgState {
 
 			self.jobs [job_index].state = Idle;
 			self.jobs [job_index].last_snapshot = Some (snapshot_time);
+
 			self.write_state ();
 
 		} else {
@@ -573,32 +580,44 @@ impl ProgState {
 				time_format_pretty (snapshot_time));
 
 			self.jobs [job_index].last_snapshot = Some (snapshot_time);
+
 			self.write_state ();
 
 		}
 
-
 	}
 
 }
 
-fn exit_report (process_exit: ProcessExit) -> String {
+fn exit_report (
+	process_exit: ProcessExit,
+) -> String {
 
 	match process_exit {
 
 		ProcessExit::ExitStatus (status) => {
-			format! ("ended with status {}", status)
+
+			format! (
+				"ended with status {}",
+				status)
+
 		}
 
 		ProcessExit::ExitSignal (signal) => {
-			format! ("terminated by signal {}", signal)
+
+			format! (
+				"terminated by signal {}",
+				signal)
+
 		}
 
 	}
 
 }
 
-fn round_down_hour (now: Timespec) -> Timespec {
+fn round_down_hour (
+	now: Timespec,
+) -> Timespec {
 
 	Tm {
 		tm_min: 0,
@@ -609,7 +628,9 @@ fn round_down_hour (now: Timespec) -> Timespec {
 
 }
 
-fn round_down_day (now: Timespec) -> Timespec {
+fn round_down_day (
+	now: Timespec,
+) -> Timespec {
 
 	Tm {
 		tm_hour: 0,
@@ -621,17 +642,19 @@ fn round_down_day (now: Timespec) -> Timespec {
 
 }
 
-fn time_format_pretty (when: Timespec) -> String {
+fn time_format_pretty (
+	when: Timespec,
+) -> String {
 
 	time::strftime (
 		"%Y-%m-%d %H:%M:%S",
-		&time::at_utc (when)
+		&time::at_utc (when),
 	).unwrap ()
 
 }
 
 fn time_format_pretty_opt (
-	when_opt: Option<Timespec>
+	when_opt: Option <Timespec>,
 ) -> Option<String> {
 
 	match when_opt {
@@ -641,7 +664,9 @@ fn time_format_pretty_opt (
 
 }
 
-fn time_format_day (when: Timespec) -> String {
+fn time_format_day (
+	when: Timespec,
+) -> String {
 
 	time::strftime (
 		"%Y-%m-%d",
@@ -650,7 +675,9 @@ fn time_format_day (when: Timespec) -> String {
 
 }
 
-fn time_format_hour (when: Timespec) -> String {
+fn time_format_hour (
+	when: Timespec,
+) -> String {
 
 	time::strftime (
 		"%Y-%m-%d-%H",
