@@ -14,16 +14,24 @@ extern crate time;
 
 use std::env;
 
-use wbs::backup::state::ProgState;
+use wbs::backup::state::*;
+use wbs::backup::main::*;
 
 mod wbs {
+
 	pub mod backup {
-		mod config;
-		mod flock;
-		mod log;
+
+		pub mod log;
+
+		pub mod config;
+		pub mod flock;
+		pub mod main;
+		pub mod run;
 		pub mod state;
-		mod time;
+		pub mod time;
+
 	}
+
 }
 
 fn main () {
@@ -45,14 +53,14 @@ fn main () {
 
 	// init program
 
-	let mut prog_state =
+	let mut state =
 		ProgState::setup (& config_path);
 
 	// run program
 
-	prog_state.write_state ();
+	state.write_state ();
 
-	prog_state.main_loop ();
+	main_loop (&mut state);
 
 	// (never reach here)
 

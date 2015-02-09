@@ -2,18 +2,11 @@ extern crate time;
 
 use rustc_serialize::json;
 
-use std::cmp::Ordering;
 use std::old_io::File;
 use std::old_io::IoResult;
 use std::old_io::fs;
 use std::old_io::fs::PathExtensions;
-use std::old_io::process;
-use std::old_io::process::Command;
-use std::old_io::process::ProcessExit;
-use std::old_io::timer::sleep;
 use std::option::*;
-use std::os::unix::prelude::*;
-use std::time::Duration;
 
 use time::Timespec;
 
@@ -22,7 +15,7 @@ use wbs::backup::flock::Lock;
 use wbs::backup::state::SyncState::*;
 use wbs::backup::time::*;
 
-enum SyncState {
+pub enum SyncState {
 	Idle,
 	Syncing,
 	Snapshotting,
@@ -49,7 +42,7 @@ impl ToString for SyncState {
 
 	fn to_string (& self) -> String {
 
-		match *self {
+		match * self {
 			Idle => { "idle".to_string () }
 			Syncing => { "syncing".to_string () }
 			Snapshotting => { "snapshotting".to_string () }
@@ -63,39 +56,35 @@ impl ToString for SyncState {
 #[derive (RustcEncodable, RustcDecodable)]
 struct DiskJobState {
 
-	name: String,
-	state: String,
+	pub name: String,
+	pub state: String,
 
-	last_sync: Option <String>,
-	last_snapshot: Option <String>,
+	pub last_sync: Option <String>,
+	pub last_snapshot: Option <String>,
 
 }
 
 #[derive (RustcEncodable, RustcDecodable)]
 struct DiskState {
 
-	jobs: Vec <DiskJobState>,
+	pub jobs: Vec <DiskJobState>,
 
 }
 
 struct JobState {
 
-	name: String,
-	state: SyncState,
+	pub name: String,
+	pub state: SyncState,
 
-	last_sync: Option <Timespec>,
-	last_snapshot: Option <Timespec>,
+	pub last_sync: Option <Timespec>,
+	pub last_snapshot: Option <Timespec>,
 
 }
 
 pub struct ProgState {
-
-	config: DiskConfig,
-
-	lock: Lock,
-
-	jobs: Vec <JobState>,
-
+	pub config: DiskConfig,
+	pub lock: Lock,
+	pub jobs: Vec <JobState>,
 }
 
 impl ProgState {
@@ -152,37 +141,89 @@ impl ProgState {
 
 	}
 
+	fn read_state (
+		config: DiskConfig,
+		lock: Lock,
+		state_path: Path,
+	) -> ProgState {
+
+		let state_json =
+			File::open (
+				& state_path,
+			).read_to_string ().unwrap_or_else (
+				|err|
+
+				panic! (
+					"error reading state {}: {}",
+					state_path.display (),
+					err)
+
+			);
+
+		let disk_state: DiskState =
+			json::decode (
+				& state_json
+			).unwrap_or_else (
+				|err|
+
+				panic! (
+					"error reading state {}: {}",
+					state_path.display (),
+					err)
+
+			);
+
+		let jobs_temp =
+			config.jobs.iter ().map (
+				|job_config|
+
+				ProgState::read_job_state (
+					& disk_state,
+					job_config)
+
+			).collect ();
+
+		ProgState {
+			config: config,
+			lock: lock,
+			jobs: jobs_temp,
+		}
+
+	}
+
+	fn new_state (
+		config: DiskConfig,
+		lock: Lock,
+	) -> ProgState {
+
+		let jobs_temp = config.jobs.iter ().map (
+			|job_config|
+
+			JobState {
+				name: job_config.name.clone (),
+				state: Idle,
+				last_sync: None,
+				last_snapshot: None,
+			}
+
+		).collect ();
+
+		ProgState {
+			config: config,
+			lock: lock,
+			jobs: jobs_temp,
+		}
+
+	}
+
 	pub fn setup (
 		config_path: & Path,
 	) -> ProgState {
 
 		log! ("loading config");
 
-		let config_json =
-			File::open (
-				&config_path
-			).read_to_string ().unwrap_or_else (
-				|err|
-
-				panic! (
-					"error reading config {}: {}",
-					config_path.display (),
-					err)
-
-			);
-
-		let config: DiskConfig =
-			json::decode (
-				& config_json,
-			).unwrap_or_else (
-				|err|
-
-				panic! (
-					"error reading config {}: {}",
-					config_path.display (),
-					err)
-
-			);
+		let config =
+			DiskConfig::read (config_path);
 
 		// obtain lock
 
@@ -203,71 +244,20 @@ impl ProgState {
 
 			log! ("load existing state");
 
-			let state_json =
-				File::open (
-					& state_path,
-				).read_to_string ().unwrap_or_else (
-					|err|
-
-					panic! (
-						"error reading state {}: {}",
-						state_path.display (),
-						err)
-
-				);
-
-			let disk_state: DiskState =
-				json::decode (
-					& state_json
-				).unwrap_or_else (
-					|err|
-
-					panic! (
-						"error reading state {}: {}",
-						state_path.display (),
-						err)
-
-				);
-
-			let jobs_temp =
-				config.jobs.iter ().map (
-					|job_config|
-
-					ProgState::read_job_state (
-						& disk_state,
-						job_config)
-
-				).collect ();
-
-			let new = ProgState {
-				config: config,
-				lock: lock,
-				jobs: jobs_temp,
-			};
-
-			return new;
+			ProgState::read_state (
+				config,
+				lock,
+				state_path,
+			)
 
 		} else {
 
 			log! ("no existing state");
 
-			let jobs_temp = config.jobs.iter ().map (
-				|job_config|
-
-				JobState {
-					name: job_config.name.clone (),
-					state: Idle,
-					last_sync: None,
-					last_snapshot: None,
-				}
-
-			).collect ();
-
-			return ProgState {
-				config: config,
-				lock: lock,
-				jobs: jobs_temp,
-			};
+			ProgState::new_state (
+				config,
+				lock,
+			)
 
 		}
 
@@ -335,230 +325,6 @@ impl ProgState {
 				err)
 
 		);
-
-	}
-
-	fn loop_job (
-		&mut self,
-		job_index: usize,
-	) {
-
-		let now = time::get_time ();
-		let last_hour = round_down_hour (now);
-		let last_day = round_down_day (now);
-
-		match self.jobs [job_index].last_sync {
-			None => { self.do_sync (job_index, last_hour) }
-			Some (last_sync) => match last_sync.cmp (&last_hour) {
-				Ordering::Less => { self.do_sync (job_index, last_hour) }
-				Ordering::Equal => { return }
-				Ordering::Greater => { panic! ("last sync is in future") }
-			}
-		}
-
-		match self.jobs [job_index].last_snapshot {
-			None => { self.do_snapshot (job_index, last_day) }
-			Some (last_snapshot) => match last_snapshot.cmp (&last_day) {
-				Ordering::Less => { self.do_snapshot (job_index, last_day) }
-				Ordering::Equal => { return }
-				Ordering::Greater => { panic! ("last snapshot is in future") }
-			}
-		}
-
-	}
-
-	fn loop_once (&mut self) {
-
-		for i in 0 .. self.jobs.len () {
-			self.loop_job (i)
-		}
-
-	}
-
-	pub fn main_loop (&mut self) {
-		loop {
-			self.loop_once ();
-			sleep (Duration::seconds (1));
-		}
-	}
-
-	fn run_script (
-		& self,
-		name: &str,
-		script: &str,
-		log: &str,
-		time: &str
-	) -> ProcessExit {
-
-		let output_path =
-			Path::new (format! (
-				"{}-{}.log",
-				log,
-				time));
-
-		let output_file =
-			File::create (
-				& output_path
-			).unwrap_or_else (
-				|err| 
-				
-				panic! (
-					"error creating {} log {}: {}",
-					name,
-					output_path.display (),
-					err)
-			
-			);
-
-		let mut process =
-			Command::new (script)
-			.arg (time)
-			.stdin (process::Ignored)
-			.stdout (process::InheritFd (output_file.as_raw_fd ()))
-			.stderr (process::InheritFd (output_file.as_raw_fd ()))
-			.spawn ()
-			.unwrap_or_else (
-				|err|
-				
-				panic! (
-					"error running script {}: {}",
-					script,
-					err)
-
-			);
-
-		process.wait ().unwrap_or_else (
-			|err|
-			
-			panic! (
-				"error running script {}: {}",
-				script,
-				err)
-
-		)
-
-	}
-
-	fn do_sync (
-		&mut self,
-		job_index: usize,
-		sync_time: Timespec
-	) {
-
-		if self.config.jobs [job_index].sync_script.is_some () {
-
-			log! (
-				"sync started for {} {}",
-				self.config.jobs [job_index].name,
-				time_format_pretty (sync_time));
-
-			self.jobs [job_index].state = Syncing;
-			self.write_state ();
-
-			let exit_status =
-				self.run_script (
-					"sync",
-					& self.config.jobs [job_index].sync_script.clone ().unwrap (),
-					& self.config.jobs [job_index].sync_log.clone ().unwrap (),
-					& time_format_hour (sync_time));
-
-			log! (
-				"sync for {} {}",
-				self.config.jobs [job_index].name,
-				exit_report (exit_status));
-
-			self.jobs [job_index].state = Idle;
-			self.jobs [job_index].last_sync = Some (sync_time);
-
-			self.write_state ();
-
-		} else {
-
-			log! (
-				"sync skipped for {} {}",
-				self.config.jobs [job_index].name,
-				time_format_pretty (sync_time));
-
-			self.jobs [job_index].last_sync = Some (sync_time);
-
-			self.write_state ();
-
-		}
-
-	}
-
-	fn do_snapshot (
-		&mut self,
-		job_index: usize,
-		snapshot_time: Timespec,
-	) {
-
-		if self.config.jobs [job_index].snapshot_script.is_some () {
-
-			log! (
-				"snapshot started for {} {}",
-				self.config.jobs [job_index].name,
-				time_format_pretty (snapshot_time));
-
-			self.jobs [job_index].state = Snapshotting;
-
-			self.write_state ();
-
-			let exit_status =
-				self.run_script (
-					"snapshot",
-					& self.config.jobs [job_index].snapshot_script.clone ().unwrap (),
-					& self.config.jobs [job_index].snapshot_log.clone ().unwrap (),
-					& time_format_day (snapshot_time));
-
-			log! (
-				"snapshot for {} {}",
-				self.config.jobs [job_index].name,
-				exit_report (exit_status));
-
-			self.jobs [job_index].state = Idle;
-			self.jobs [job_index].last_snapshot = Some (snapshot_time);
-
-			self.write_state ();
-
-		} else {
-
-			log! (
-				"snapshot skipped for {} {}",
-				self.config.jobs [job_index].name,
-				time_format_pretty (snapshot_time));
-
-			self.jobs [job_index].last_snapshot = Some (snapshot_time);
-
-			self.write_state ();
-
-		}
-
-	}
-
-}
-
-fn exit_report (
-	process_exit: ProcessExit,
-) -> String {
-
-	match process_exit {
-
-		ProcessExit::ExitStatus (status) => {
-
-			format! (
-				"ended with status {}",
-				status)
-
-		}
-
-		ProcessExit::ExitSignal (signal) => {
-
-			format! (
-				"terminated by signal {}",
-				signal)
-
-		}
 
 	}
 
