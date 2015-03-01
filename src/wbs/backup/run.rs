@@ -1,10 +1,10 @@
 extern crate time;
 
-use std::old_io::File;
-use std::old_io::process;
-use std::old_io::process::Command;
-use std::old_io::process::ProcessExit;
-use std::os::unix::prelude::*;
+use std::fs::File;
+use std::io::Result;
+use std::io::Write;
+use std::path::Path;
+use std::process;
 
 use time::Timespec;
 
@@ -16,16 +16,33 @@ pub fn run_script (
 	name: &str,
 	script: &str,
 	log: &str,
-	time: &str
-) -> ProcessExit {
+	time: &str,
+) -> process::ExitStatus {
 
-	let output_path =
-		Path::new (format! (
+	let process_output =
+		process::Command::new (script)
+		.arg (time)
+		.output ()
+		.unwrap_or_else (
+			|err|
+			
+			panic! (
+				"error running script {}: {}",
+				script,
+				err)
+
+		);
+
+	let output_path_str =
+		format! (
 			"{}-{}.log",
 			log,
-			time));
+			time);
 
-	let output_file =
+	let output_path =
+		Path::new (& output_path_str);
+
+	let mut output_file =
 		File::create (
 			& output_path
 		).unwrap_or_else (
@@ -39,32 +56,43 @@ pub fn run_script (
 		
 		);
 
-	let mut process =
-		Command::new (script)
-		.arg (time)
-		.stdin (process::Ignored)
-		.stdout (process::InheritFd (output_file.as_raw_fd ()))
-		.stderr (process::InheritFd (output_file.as_raw_fd ()))
-		.spawn ()
-		.unwrap_or_else (
-			|err|
-			
-			panic! (
-				"error running script {}: {}",
-				script,
-				err)
-
-		);
-
-	process.wait ().unwrap_or_else (
+	write_process_output (
+		&mut output_file,
+		& process_output,
+	).unwrap_or_else (
 		|err|
-		
+
 		panic! (
-			"error running script {}: {}",
+			"error writing script output {}: {}",
 			script,
 			err)
 
-	)
+	);
+
+	process_output.status
+
+}
+
+pub fn write_process_output (
+	output_file: &mut File,
+	process_output: & process::Output,
+) -> Result<()> {
+
+	try! {
+		write! (
+			output_file,
+			"STDOUT:\n{:?}\n",
+			process_output.stdout)
+	}
+
+	try! {
+		write! (
+			output_file,
+			"STDERR:\n{:?}\n",
+			process_output.stderr)
+	}
+
+	Ok (())
 
 }
 
@@ -178,24 +206,32 @@ pub fn do_snapshot (
 }
 
 fn exit_report (
-	process_exit: ProcessExit,
+	exit_status: process::ExitStatus,
 ) -> String {
 
-	match process_exit {
+	if exit_status.success () {
 
-		ProcessExit::ExitStatus (status) => {
+		format! (
+			"ended successfully")
 
-			format! (
-				"ended with status {}",
-				status)
+	} else {
 
-		}
+		match exit_status.code () {
 
-		ProcessExit::ExitSignal (signal) => {
+			Some (status) => {
 
-			format! (
-				"terminated by signal {}",
-				signal)
+				format! (
+					"ended with status {}",
+					status)
+
+			},
+
+			None => {
+
+				format! (
+					"terminated by signal")
+
+			}
 
 		}
 

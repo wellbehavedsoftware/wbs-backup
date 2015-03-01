@@ -1,7 +1,7 @@
 extern crate time;
 
 use std::cmp::Ordering;
-use std::old_io::timer::sleep;
+use std::old_io::timer;
 use std::time::Duration;
 
 use wbs::backup::run::*;
@@ -99,7 +99,7 @@ pub fn main_loop (
 
 	loop {
 		loop_once (state);
-		sleep (Duration::seconds (1));
+		timer::sleep (Duration::seconds (1));
 	}
 
 }

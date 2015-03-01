@@ -1,6 +1,8 @@
 use rustc_serialize::json;
 
-use std::old_io::File;
+use std::io::Read;
+use std::fs::File;
+use std::path::Path;
 
 #[derive (RustcEncodable, RustcDecodable)]
 pub struct DiskJobConfig {
@@ -31,18 +33,22 @@ impl DiskConfig {
 		config_path: & Path,
 	) -> DiskConfig {
 
-		let config_json =
-			File::open (
-				&config_path
-			).read_to_string ().unwrap_or_else (
-				|err|
+		let mut config_json: String =
+			String::new ();
 
-				panic! (
-					"error reading config {}: {}",
-					config_path.display (),
-					err)
+		File::open (
+			& config_path,
+		).unwrap ().read_to_string (
+			&mut config_json,
+		).unwrap_or_else (
+			|err|
 
-			);
+			panic! (
+				"error reading config {}: {}",
+				config_path.display (),
+				err)
+
+		);
 
 		let config: DiskConfig =
 			json::decode (

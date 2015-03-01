@@ -2,16 +2,19 @@ extern crate time;
 
 use rustc_serialize::json;
 
-use std::old_io::File;
-use std::old_io::IoResult;
-use std::old_io::fs;
-use std::old_io::fs::PathExtensions;
-use std::option::*;
+use std::io::Read;
+use std::io::Result;
+use std::io::Write;
+
+use std::fs;
+use std::fs::File;
+use std::fs::PathExt;
+
+use std::path::Path;
 
 use time::Timespec;
 
 use wbs::backup::config::*;
-use wbs::backup::flock::Lock;
 use wbs::backup::state::SyncState::*;
 use wbs::backup::time::*;
 
@@ -83,7 +86,6 @@ struct JobState {
 
 pub struct ProgState {
 	pub config: DiskConfig,
-	pub lock: Lock,
 	pub jobs: Vec <JobState>,
 }
 
@@ -143,22 +145,25 @@ impl ProgState {
 
 	fn read_state (
 		config: DiskConfig,
-		lock: Lock,
-		state_path: Path,
+		state_path: & Path,
 	) -> ProgState {
 
-		let state_json =
-			File::open (
-				& state_path,
-			).read_to_string ().unwrap_or_else (
-				|err|
+		let mut state_json: String =
+			String::new ();
 
-				panic! (
-					"error reading state {}: {}",
-					state_path.display (),
-					err)
+		File::open (
+			& state_path,
+		).unwrap ().read_to_string (
+			&mut state_json,
+		).unwrap_or_else (
+			|err|
 
-			);
+			panic! (
+				"error reading state {}: {}",
+				state_path.display (),
+				err)
+
+		);
 
 		let disk_state: DiskState =
 			json::decode (
@@ -185,7 +190,6 @@ impl ProgState {
 
 		ProgState {
 			config: config,
-			lock: lock,
 			jobs: jobs_temp,
 		}
 
@@ -193,7 +197,6 @@ impl ProgState {
 
 	fn new_state (
 		config: DiskConfig,
-		lock: Lock,
 	) -> ProgState {
 
 		let jobs_temp = config.jobs.iter ().map (
@@ -210,7 +213,6 @@ impl ProgState {
 
 		ProgState {
 			config: config,
-			lock: lock,
 			jobs: jobs_temp,
 		}
 
@@ -225,20 +227,13 @@ impl ProgState {
 		let config =
 			DiskConfig::read (config_path);
 
-		// obtain lock
-
-		log! ("obtaining lock");
-
-		let lock_path =
-			Path::new (config.lock.clone ());
-
-		let lock =
-			Lock::new (& lock_path, false);
-
 		// load state
 
+		let state_path_str =
+			config.state.clone ();
+
 		let state_path =
-			Path::new (& config.state);
+			Path::new (& state_path_str);
 
 		if state_path.exists () {
 
@@ -246,7 +241,6 @@ impl ProgState {
 
 			ProgState::read_state (
 				config,
-				lock,
 				state_path,
 			)
 
@@ -256,7 +250,6 @@ impl ProgState {
 
 			ProgState::new_state (
 				config,
-				lock,
 			)
 
 		}
@@ -267,13 +260,12 @@ impl ProgState {
 		&mut self,
 		state_path_temp: & Path,
 		state_json: &str,
-	) -> IoResult<()> {
+	) -> Result<()> {
 
 		let mut file = try! { File::create (state_path_temp) };
 
-		try! { file.write_str (& state_json.to_string ()) }
-		try! { file.write_str ("\n") }
-		try! { file.fsync () }
+		try! { write! (&mut file, "{}\n", & state_json.to_string ()) }
+		try! { file.sync_all () }
 
 		Ok (())
 
@@ -294,11 +286,17 @@ impl ProgState {
 		let state_json =
 			json::encode (& disk_state).unwrap ();
 
+		let state_path_str =
+			self.config.state.clone ();
+
 		let state_path =
-			Path::new (self.config.state.clone ());
+			Path::new (& state_path_str);
+
+		let state_path_temp_str =
+			format! ("{}.temp", self.config.state);
 
 		let state_path_temp =
-			Path::new (format! ("{}.temp", self.config.state));
+			Path::new (& state_path_temp_str);
 
 		self.write_state_temp (
 			& state_path_temp,
