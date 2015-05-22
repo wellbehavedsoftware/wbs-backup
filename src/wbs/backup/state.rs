@@ -8,7 +8,6 @@ use std::io::Write;
 
 use std::fs;
 use std::fs::File;
-use std::fs::PathExt;
 
 use std::path::Path;
 
@@ -74,7 +73,7 @@ struct DiskState {
 
 }
 
-struct JobState {
+pub struct JobState {
 
 	pub name: String,
 	pub state: SyncState,
@@ -235,22 +234,28 @@ impl ProgState {
 		let state_path =
 			Path::new (& state_path_str);
 
-		if state_path.exists () {
+		match fs::metadata (state_path) {
 
-			log! ("load existing state");
+			Ok (_) => {
 
-			ProgState::read_state (
-				config,
-				state_path,
-			)
+				log! ("load existing state");
 
-		} else {
+				ProgState::read_state (
+					config,
+					state_path,
+				)
 
-			log! ("no existing state");
+			},
 
-			ProgState::new_state (
-				config,
-			)
+			Err (_) => {
+
+				log! ("no existing state");
+
+				ProgState::new_state (
+					config,
+				)
+
+			},
 
 		}
 

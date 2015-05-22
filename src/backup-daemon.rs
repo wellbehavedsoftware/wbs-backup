@@ -1,14 +1,7 @@
-#![crate_name = "backup-daemon"]
+#![crate_name = "backup_daemon"]
 #![crate_type = "bin"]
 
-#![feature (io)]
-#![feature (fs)]
-#![feature (old_io)]
-#![feature (path)]
-#![feature (process)]
-#![feature (std_misc)]
-
-extern crate "rustc-serialize" as rustc_serialize;
+extern crate rustc_serialize;
 extern crate time;
 
 use std::env;
