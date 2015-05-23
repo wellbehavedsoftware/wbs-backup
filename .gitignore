@@ -1,5 +1,6 @@
 /backup-daemon.lock
 /backup-daemon.state
+/dist
 /snapshot-script
 /target
 /*.log

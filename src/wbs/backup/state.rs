@@ -93,7 +93,7 @@ struct DiskJob {
 	pub last_snapshot: Option <String>,
 	pub last_send: Option <String>,
 
-	pub snapshots: Vec <DiskSnapshot>,
+	pub snapshots: Option <Vec <DiskSnapshot>>,
 
 }
 
@@ -220,13 +220,23 @@ impl Global {
 					last_send: time_parse_opt (
 						& disk_job.last_send),
 
-					snapshots: disk_job.snapshots.iter ().map (
-						|disk_snapshot|
+					snapshots: match & disk_job.snapshots {
 
-						Global::read_snapshot (
-							disk_snapshot)
+						& Some (ref disk_snapshots) => {
 
-					).collect (),
+							disk_snapshots.iter ().map (
+								|disk_snapshot|
+
+								Global::read_snapshot (
+									disk_snapshot)
+
+							).collect ()
+
+						},
+
+						& None => vec! [],
+
+					}
 
 				}
 
@@ -273,13 +283,13 @@ impl Global {
 			last_send: time_format_pretty_opt (
 				job.last_send),
 
-			snapshots: job.snapshots.iter ().map (
+			snapshots: Some (job.snapshots.iter ().map (
 				|snapshot|
 
 				Global::write_snapshot (
 					snapshot)
 
-			).collect (),
+			).collect ()),
 
 		}
 
