@@ -8,8 +8,8 @@ use std::process;
 
 use time::Timespec;
 
+use wbs::backup::config::*;
 use wbs::backup::state::*;
-use wbs::backup::state::SyncState::*;
 use wbs::backup::time::*;
 
 pub fn run_script (
@@ -97,26 +97,31 @@ pub fn write_process_output (
 }
 
 pub fn do_sync (
-	state: &mut ProgState,
+	config: & Config,
+	state: &mut Global,
 	job_index: usize,
 	sync_time: Timespec
 ) {
 
-	if state.config.jobs [job_index].sync_script.is_some () {
+	let job_config = & config.jobs [job_index];
+
+	if job_config.sync_script.is_some () {
 
 		log! (
 			"sync started for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			time_format_pretty (sync_time));
 
-		state.jobs [job_index].state = Syncing;
-		state.write_state ();
+		state.jobs [job_index].state =
+			JobState::Syncing;
+
+		state.write_state (config);
 
 		let sync_script =
-			state.config.jobs [job_index].sync_script.clone ().unwrap ();
+			job_config.sync_script.clone ().unwrap ();
 
 		let sync_log =
-			state.config.jobs [job_index].sync_log.clone ().unwrap ();
+			job_config.sync_log.clone ().unwrap ();
 
 		let exit_status =
 			run_script (
@@ -127,51 +132,70 @@ pub fn do_sync (
 
 		log! (
 			"sync for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			exit_report (exit_status));
 
-		state.jobs [job_index].state = Idle;
-		state.jobs [job_index].last_sync = Some (sync_time);
+		state.jobs [job_index].state =
+			JobState::Idle;
 
-		state.write_state ();
+		state.jobs [job_index].last_sync =
+			Some (sync_time);
+
+		state.write_state (config);
 
 	} else {
 
 		log! (
 			"sync skipped for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			time_format_pretty (sync_time));
 
-		state.jobs [job_index].last_sync = Some (sync_time);
+		state.jobs [job_index].last_sync =
+			Some (sync_time);
 
-		state.write_state ();
+		state.write_state (config);
 
 	}
 
 }
 
 pub fn do_snapshot (
-	state: &mut ProgState,
+	config: & Config,
+	state: &mut Global,
 	job_index: usize,
 	snapshot_time: Timespec,
 ) {
 
-	if state.config.jobs [job_index].snapshot_script.is_some () {
+	let job_config = & config.jobs [job_index];
+
+	if job_config.snapshot_script.is_some () {
 
 		log! (
 			"snapshot started for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			time_format_pretty (snapshot_time));
 
-		state.jobs [job_index].state = Snapshotting;
+		state.jobs [job_index].state =
+			JobState::Snapshotting;
 
-		state.write_state ();
+		let snapshot_index =
+			state.jobs [job_index].snapshots.len ();
+
+		state.jobs [job_index].snapshots.push (
+			Snapshot {
+				state: SnapshotState::Snapshotting,
+				snapshot_time: snapshot_time,
+				send_time: None,
+			}
+		);
+
+		state.write_state (config);
 
 		let snapshot_script = 
-			state.config.jobs [job_index].snapshot_script.clone ().unwrap ();
+			job_config.snapshot_script.clone ().unwrap ();
 
 		let snapshot_log =
-			state.config.jobs [job_index].snapshot_log.clone ().unwrap ();
+			job_config.snapshot_log.clone ().unwrap ();
 
 		let exit_status =
 			run_script (
@@ -182,24 +206,166 @@ pub fn do_snapshot (
 
 		log! (
 			"snapshot for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			exit_report (exit_status));
 
-		state.jobs [job_index].state = Idle;
-		state.jobs [job_index].last_snapshot = Some (snapshot_time);
+		state.jobs [job_index].state =
+			JobState::Idle;
 
-		state.write_state ();
+		state.jobs [job_index].last_snapshot =
+			Some (snapshot_time);
+
+		state.jobs [job_index].snapshots [snapshot_index].state =
+			SnapshotState::Snapshotted;
+
+		state.write_state (config);
 
 	} else {
 
 		log! (
 			"snapshot skipped for {} {}",
-			state.config.jobs [job_index].name,
+			job_config.name,
 			time_format_pretty (snapshot_time));
 
-		state.jobs [job_index].last_snapshot = Some (snapshot_time);
+		state.jobs [job_index].last_snapshot =
+			Some (snapshot_time);
 
-		state.write_state ();
+		state.write_state (config);
+
+	}
+
+}
+
+pub fn do_send (
+	config: & Config,
+	state: &mut Global,
+	job_index: usize,
+	send_time: Timespec,
+) {
+
+	let job_config = & config.jobs [job_index];
+
+	if job_config.send_script.is_some () {
+
+		log! (
+			"send started for {} {}",
+			job_config.name,
+			time_format_pretty (send_time));
+
+		let mut snapshot_indexes: Vec <usize> = vec! [];
+
+		for (snapshot_index, snapshot)
+			in state.jobs [job_index].snapshots.iter ().enumerate () {
+
+			match snapshot.state {
+
+				SnapshotState::Snapshotted => {
+
+					snapshot_indexes.push (snapshot_index)
+
+				},
+
+				_ => {},
+
+			}
+
+		}
+
+		for snapshot_index in snapshot_indexes {
+
+			do_send_snapshot (
+				config,
+				state,
+				job_index,
+				snapshot_index,
+				send_time);
+
+		}
+
+	} else {
+
+		log! (
+			"send skipped for {} {}",
+			job_config.name,
+			time_format_pretty (send_time));
+
+		state.jobs [job_index].last_send =
+			Some (send_time);
+
+		state.write_state (config);
+
+	}
+
+}
+
+pub fn do_send_snapshot (
+	config: & Config,
+	state: &mut Global,
+	job_index: usize,
+	snapshot_index: usize,
+	send_time: Timespec,
+) {
+
+	let job_config = & config.jobs [job_index];
+
+	if job_config.send_script.is_some () {
+
+		log! (
+			"send started for {} {}",
+			job_config.name,
+			time_format_pretty (send_time));
+
+		state.jobs [job_index].state =
+			JobState::Sending;
+
+		state.jobs [job_index].snapshots [snapshot_index].state =
+			SnapshotState::Sending;
+
+		state.jobs [job_index].snapshots [snapshot_index].send_time =
+			Some (send_time);
+
+		state.write_state (config);
+
+		let snapshot_script = 
+			job_config.snapshot_script.clone ().unwrap ();
+
+		let snapshot_log =
+			job_config.snapshot_log.clone ().unwrap ();
+
+		let exit_status =
+			run_script (
+				"send",
+				& snapshot_script,
+				& snapshot_log,
+				& time_format_day (send_time));
+
+		log! (
+			"snapshot for {} {}",
+			job_config.name,
+			exit_report (exit_status));
+
+		state.jobs [job_index].state =
+			JobState::Idle;
+
+		state.jobs [job_index].last_send =
+			Some (send_time);
+
+		state.jobs [job_index].snapshots [snapshot_index].state =
+			SnapshotState::Sent;
+
+		state.write_state (config);
+
+	} else {
+
+		log! (
+			"send skipped for {} {}",
+			job_config.name,
+			time_format_pretty (send_time));
+
+		state.jobs [job_index].last_send =
+			Some (send_time);
+
+		state.write_state (config);
 
 	}
 

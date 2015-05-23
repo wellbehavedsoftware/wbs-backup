@@ -3,14 +3,14 @@ extern crate time;
 use std::cmp::Ordering;
 use std::thread;
 
-use time::Duration;
-
+use wbs::backup::config::*;
 use wbs::backup::run::*;
 use wbs::backup::state::*;
 use wbs::backup::time::*;
 
 fn loop_job (
-	state: &mut ProgState,
+	config: & Config,
+	state: &mut Global,
 	job_index: usize,
 ) {
 
@@ -22,16 +22,18 @@ fn loop_job (
 
 		None => {
 			do_sync (
+				config,
 				state,
 				job_index,
 				last_hour,
 			)
 		}
 
-		Some (last_sync) => match last_sync.cmp (&last_hour) {
+		Some (last_sync) => match last_sync.cmp (& last_hour) {
 
 			Ordering::Less => {
 				do_sync (
+					config,
 					state,
 					job_index,
 					last_hour,
@@ -54,6 +56,7 @@ fn loop_job (
 
 		None => {
 			do_snapshot (
+				config,
 				state,
 				job_index,
 				last_day,
@@ -64,6 +67,7 @@ fn loop_job (
 
 			Ordering::Less => {
 				do_snapshot (
+					config,
 					state,
 					job_index,
 					last_day,
@@ -82,25 +86,64 @@ fn loop_job (
 
 	}
 
+	match state.jobs [job_index].last_send {
+
+		None => {
+			do_send (
+				config,
+				state,
+				job_index,
+				last_day,
+			)
+		}
+
+		Some (last_send) => match last_send.cmp (&last_day) {
+
+			Ordering::Less => {
+				do_send (
+					config,
+					state,
+					job_index,
+					last_day,
+				)
+			}
+
+			Ordering::Equal => {
+				return
+			}
+
+			Ordering::Greater => {
+				panic! ("last send is in future")
+			}
+
+		}
+
+	}
+
 }
 
 fn loop_once (
-	state: &mut ProgState,
+	config: & Config,
+	state: &mut Global,
 ) {
 
 	for i in 0 .. state.jobs.len () {
-		loop_job (state, i)
+		loop_job (config, state, i)
 	}
 
 }
 
 pub fn main_loop (
-	state: &mut ProgState,
+	config: & Config,
+	state: &mut Global,
 ) {
 
 	loop {
-		loop_once (state);
-		thread::sleep_ms (Duration::seconds (1).num_milliseconds () as u32);
+
+		loop_once (config, state);
+
+		thread::sleep_ms (1000);
+
 	}
 
 }

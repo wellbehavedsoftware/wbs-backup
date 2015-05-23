@@ -14,25 +14,112 @@ use std::path::Path;
 use time::Timespec;
 
 use wbs::backup::config::*;
-use wbs::backup::state::SyncState::*;
 use wbs::backup::time::*;
 
-pub enum SyncState {
+// ######################################## interface
+
+// ==================== memory state
+
+// ---------- job state
+
+pub enum JobState {
 	Idle,
 	Syncing,
 	Snapshotting,
+	Sending,
 	Exporting,
 }
 
-impl SyncState {
+// ---------- snapshot state
 
-	fn from_string (str: &str) -> SyncState {
+pub enum SnapshotState {
+	Snapshotting,
+	Snapshotted,
+	Sending,
+	Sent,
+}
+
+// ---------- snapshot
+
+pub struct Snapshot {
+
+	pub state: SnapshotState,
+
+	pub snapshot_time: Timespec,
+	pub send_time: Option <Timespec>,
+
+}
+
+// ---------- job
+
+pub struct Job {
+
+	pub name: String,
+	pub state: JobState,
+
+	pub last_sync: Option <Timespec>,
+	pub last_snapshot: Option <Timespec>,
+	pub last_send: Option <Timespec>,
+
+	pub snapshots: Vec <Snapshot>,
+
+}
+
+// ---------- global
+
+pub struct Global {
+	pub jobs: Vec <Job>,
+}
+
+// ==================== disk state
+
+#[derive (RustcEncodable, RustcDecodable)]
+struct DiskSnapshot {
+
+	pub state: String,
+
+	pub snapshot_time: String,
+	pub send_time: Option <String>,
+
+}
+
+#[derive (RustcEncodable, RustcDecodable)]
+struct DiskJob {
+
+	pub name: String,
+	pub state: String,
+
+	pub last_sync: Option <String>,
+	pub last_snapshot: Option <String>,
+	pub last_send: Option <String>,
+
+	pub snapshots: Vec <DiskSnapshot>,
+
+}
+
+#[derive (RustcEncodable, RustcDecodable)]
+struct DiskState {
+
+	pub jobs: Vec <DiskJob>,
+
+}
+
+// ######################################## implementation
+
+// ==================== memory state
+
+// ---------- job state
+
+impl JobState {
+
+	fn from_string (str: &str) -> JobState {
 
 		match str {
-			"idle" => { Idle }
-			"syncing" => { Syncing }
-			"snapshotting" => { Snapshotting }
-			"exporting" => { Exporting }
+			"idle" => { JobState::Idle }
+			"syncing" => { JobState::Syncing }
+			"snapshotting" => { JobState::Snapshotting }
+			"sending" => { JobState::Sending }
+			"exporting" => { JobState::Exporting }
 			_ => { panic! ("err") }
 		}
 
@@ -40,112 +127,186 @@ impl SyncState {
 
 }
 
-impl ToString for SyncState {
+impl ToString for JobState {
 
 	fn to_string (& self) -> String {
 
 		match * self {
-			Idle => { "idle".to_string () }
-			Syncing => { "syncing".to_string () }
-			Snapshotting => { "snapshotting".to_string () }
-			Exporting => { "exporting".to_string () }
+			JobState::Idle => { "idle".to_string () }
+			JobState::Syncing => { "syncing".to_string () }
+			JobState::Snapshotting => { "snapshotting".to_string () }
+			JobState::Sending => { "sending".to_string () }
+			JobState::Exporting => { "exporting".to_string () }
 		}
 
 	}
 
 }
 
-#[derive (RustcEncodable, RustcDecodable)]
-struct DiskJobState {
+// ---------- snapshot state
 
-	pub name: String,
-	pub state: String,
+impl SnapshotState {
 
-	pub last_sync: Option <String>,
-	pub last_snapshot: Option <String>,
+	fn from_string (str: &str) -> SnapshotState {
 
-}
+		match str {
+			"snapshotting" => { SnapshotState::Snapshotting }
+			"snapshotted" => { SnapshotState::Snapshotted }
+			"sending" => { SnapshotState::Sending }
+			"sent" => { SnapshotState::Sent }
+			_ => { panic! ("err") }
+		}
 
-#[derive (RustcEncodable, RustcDecodable)]
-struct DiskState {
-
-	pub jobs: Vec <DiskJobState>,
-
-}
-
-pub struct JobState {
-
-	pub name: String,
-	pub state: SyncState,
-
-	pub last_sync: Option <Timespec>,
-	pub last_snapshot: Option <Timespec>,
+	}
 
 }
 
-pub struct ProgState {
-	pub config: DiskConfig,
-	pub jobs: Vec <JobState>,
+impl ToString for SnapshotState {
+
+	fn to_string (& self) -> String {
+
+		match * self {
+			SnapshotState::Snapshotting => { "snapshotting".to_string () }
+			SnapshotState::Snapshotted => { "snapshotted".to_string () }
+			SnapshotState::Sending => { "sending".to_string () }
+			SnapshotState::Sent => { "sent".to_string () }
+		}
+
+	}
+
 }
 
-impl ProgState {
+// ---------- global state
 
-	fn read_job_state (
+impl Global {
+
+	fn read_job (
 		disk_state: & DiskState,
-		job_config: & DiskJobConfig,
-	) -> JobState {
+		job_config: & JobConfig,
+	) -> Job {
 
 		match disk_state.jobs.iter ().find (
 			|elem| elem.name == job_config.name
 		) {
 
 			None => {
-				JobState {
+
+				Job {
 					name: job_config.name.clone (),
-					state: Idle,
+					state: JobState::Idle,
 					last_sync: None,
 					last_snapshot: None,
+					last_send: None,
+					snapshots: vec! [],
 				}
+
 			}
 
-			Some (disk_job_state) => {
-				JobState {
+			Some (disk_job) => {
+
+				Job {
 
 					name: job_config.name.clone (),
 
-					state: SyncState::from_string (
-						& disk_job_state.state),
+					state: JobState::from_string (
+						& disk_job.state),
 
 					last_sync: time_parse_opt (
-						& disk_job_state.last_sync),
+						& disk_job.last_sync),
 
 					last_snapshot: time_parse_opt (
-						& disk_job_state.last_snapshot),
+						& disk_job.last_snapshot),
+
+					last_send: time_parse_opt (
+						& disk_job.last_send),
+
+					snapshots: disk_job.snapshots.iter ().map (
+						|disk_snapshot|
+
+						Global::read_snapshot (
+							disk_snapshot)
+
+					).collect (),
 
 				}
+
 			}
 
 		}
 
 	}
 
-	fn write_job_state (
-		job_state: & JobState,
-	) -> DiskJobState {
+	fn read_snapshot (
+		disk_snapshot: & DiskSnapshot,
+	) -> Snapshot {
 
-		DiskJobState {
-			name: job_state.name.clone (),
-			state: job_state.state.to_string (),
-			last_sync: time_format_pretty_opt (job_state.last_sync),
-			last_snapshot: time_format_pretty_opt (job_state.last_snapshot),
+		Snapshot {
+
+			state: SnapshotState::from_string (
+				& disk_snapshot.state),
+
+			snapshot_time: time_parse (
+				& disk_snapshot.snapshot_time),
+
+			send_time: time_parse_opt (
+				& disk_snapshot.send_time),
+
+		}
+
+	}
+
+	fn write_job (
+		job: & Job,
+	) -> DiskJob {
+
+		DiskJob {
+
+			name: job.name.clone (),
+			state: job.state.to_string (),
+
+			last_sync: time_format_pretty_opt (
+				job.last_sync),
+
+			last_snapshot: time_format_pretty_opt (
+				job.last_snapshot),
+
+			last_send: time_format_pretty_opt (
+				job.last_send),
+
+			snapshots: job.snapshots.iter ().map (
+				|snapshot|
+
+				Global::write_snapshot (
+					snapshot)
+
+			).collect (),
+
+		}
+
+	}
+
+	fn write_snapshot (
+		snapshot: & Snapshot,
+	) -> DiskSnapshot {
+
+		DiskSnapshot {
+
+			state: snapshot.state.to_string (),
+
+			snapshot_time: time_format_pretty (
+				snapshot.snapshot_time),
+
+			send_time: time_format_pretty_opt (
+				snapshot.send_time),
+
 		}
 
 	}
 
 	fn read_state (
-		config: DiskConfig,
+		config: & Config,
 		state_path: & Path,
-	) -> ProgState {
+	) -> Global {
 
 		let mut state_json: String =
 			String::new ();
@@ -181,50 +342,45 @@ impl ProgState {
 			config.jobs.iter ().map (
 				|job_config|
 
-				ProgState::read_job_state (
+				Global::read_job (
 					& disk_state,
 					job_config)
 
 			).collect ();
 
-		ProgState {
-			config: config,
+		Global {
 			jobs: jobs_temp,
 		}
 
 	}
 
 	fn new_state (
-		config: DiskConfig,
-	) -> ProgState {
+		config: & Config,
+	) -> Global {
 
 		let jobs_temp = config.jobs.iter ().map (
 			|job_config|
 
-			JobState {
+			Job {
 				name: job_config.name.clone (),
-				state: Idle,
+				state: JobState::Idle,
 				last_sync: None,
 				last_snapshot: None,
+				last_send: None,
+				snapshots: vec! [],
 			}
 
 		).collect ();
 
-		ProgState {
-			config: config,
+		Global {
 			jobs: jobs_temp,
 		}
 
 	}
 
-	pub fn setup (
-		config_path: & Path,
-	) -> ProgState {
-
-		log! ("loading config");
-
-		let config =
-			DiskConfig::read (config_path);
+	pub fn read (
+		config: & Config,
+	) -> Global {
 
 		// load state
 
@@ -240,7 +396,7 @@ impl ProgState {
 
 				log! ("load existing state");
 
-				ProgState::read_state (
+				Global::read_state (
 					config,
 					state_path,
 				)
@@ -251,7 +407,7 @@ impl ProgState {
 
 				log! ("no existing state");
 
-				ProgState::new_state (
+				Global::new_state (
 					config,
 				)
 
@@ -262,7 +418,7 @@ impl ProgState {
 	}
 
 	fn write_state_temp (
-		&mut self,
+		& self,
 		state_path_temp: & Path,
 		state_json: &str,
 	) -> Result<()> {
@@ -277,13 +433,19 @@ impl ProgState {
 	}
 
 	pub fn write_state (
-		&mut self,
+		& self,
+		config: & Config,
 	) {
 
 		let disk_state = DiskState {
 
 			jobs: self.jobs.iter ().map (
-				|job_state| ProgState::write_job_state (& job_state)
+				|job_state|
+
+				Global::write_job (
+					& job_state,
+				)
+
 			).collect (),
 
 		};
@@ -292,13 +454,13 @@ impl ProgState {
 			json::encode (& disk_state).unwrap ();
 
 		let state_path_str =
-			self.config.state.clone ();
+			config.state.clone ();
 
 		let state_path =
 			Path::new (& state_path_str);
 
 		let state_path_temp_str =
-			format! ("{}.temp", self.config.state);
+			format! ("{}.temp", config.state);
 
 		let state_path_temp =
 			Path::new (& state_path_temp_str);

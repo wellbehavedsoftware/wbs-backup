@@ -8,6 +8,7 @@ use std::env;
 
 use std::path::Path;
 
+use wbs::backup::config::*;
 use wbs::backup::state::*;
 use wbs::backup::main::*;
 
@@ -47,14 +48,17 @@ fn main () {
 
 	// init program
 
+	let config =
+		Config::read (& config_path);
+
 	let mut state =
-		ProgState::setup (& config_path);
+		Global::read (& config);
 
 	// run program
 
-	state.write_state ();
+	state.write_state (& config);
 
-	main_loop (&mut state);
+	main_loop (& config, &mut state);
 
 	// (never reach here)
 

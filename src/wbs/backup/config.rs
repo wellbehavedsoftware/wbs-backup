@@ -1,11 +1,15 @@
+extern crate time;
+
 use rustc_serialize::json;
 
 use std::io::Read;
 use std::fs::File;
 use std::path::Path;
 
+use wbs::backup::time::*;
+
 #[derive (RustcEncodable, RustcDecodable)]
-pub struct DiskJobConfig {
+pub struct JobConfig {
 
 	pub name: String,
 
@@ -15,23 +19,28 @@ pub struct DiskJobConfig {
 	pub snapshot_script: Option <String>,
 	pub snapshot_log: Option <String>,
 
+	pub send_script: Option <String>,
+	pub send_log: Option <String>,
+
 }
 
 #[derive (RustcEncodable, RustcDecodable)]
-pub struct DiskConfig {
+pub struct Config {
 
 	pub state: String,
 	pub lock: String,
 
-	pub jobs: Vec <DiskJobConfig>,
+	pub jobs: Vec <JobConfig>,
 
 }
 
-impl DiskConfig {
+impl Config {
 
 	pub fn read (
 		config_path: & Path,
-	) -> DiskConfig {
+	) -> Config {
+
+		log! ("loading config");
 
 		let mut config_json: String =
 			String::new ();
@@ -50,7 +59,7 @@ impl DiskConfig {
 
 		);
 
-		let config: DiskConfig =
+		let config: Config =
 			json::decode (
 				& config_json,
 			).unwrap_or_else (
