@@ -326,21 +326,21 @@ pub fn do_send_snapshot (
 
 		state.write_state (config);
 
-		let snapshot_script = 
-			job_config.snapshot_script.clone ().unwrap ();
+		let send_script = 
+			job_config.send_script.clone ().unwrap ();
 
-		let snapshot_log =
-			job_config.snapshot_log.clone ().unwrap ();
+		let send_log =
+			job_config.send_log.clone ().unwrap ();
 
 		let exit_status =
 			run_script (
 				"send",
-				& snapshot_script,
-				& snapshot_log,
+				& send_script,
+				& send_log,
 				& time_format_day (send_time));
 
 		log! (
-			"snapshot for {} {}",
+			"send completed for {} {}",
 			job_config.name,
 			exit_report (exit_status));
 
