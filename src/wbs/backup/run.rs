@@ -78,19 +78,23 @@ pub fn write_process_output (
 	process_output: & process::Output,
 ) -> Result<()> {
 
-	try! {
-		write! (
-			output_file,
-			"STDOUT:\n{:?}\n",
-			process_output.stdout)
-	}
+	try! (write! (
+		output_file,
+		"STDOUT:\n"));
 
-	try! {
-		write! (
-			output_file,
-			"STDERR:\n{:?}\n",
-			process_output.stderr)
-	}
+	try! (output_file.write (
+		& process_output.stdout));
+
+	try! (write! (
+		output_file,
+		"\nSTDERR:\n"));
+
+	try! (output_file.write (
+		& process_output.stderr));
+
+	try! (write! (
+		output_file,
+		"\n"));
 
 	Ok (())
 
