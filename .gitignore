@@ -1,6 +1,7 @@
-/backup-daemon.lock
-/backup-daemon.state
-/dist
-/snapshot-script
-/target
-/*.log
+/backup-daemon/dist
+/backup-daemon/backup-daemon.lock
+/backup-daemon/backup-daemon.state
+/backup-daemon/snapshot-script
+/backup-daemon/target
+/backup-daemon/*.log
+/tar-filter/target
