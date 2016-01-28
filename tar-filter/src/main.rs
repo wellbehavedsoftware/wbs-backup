@@ -1,5 +1,32 @@
 use std::io::Read;
+use std::io::Write;
 use std::mem;
+
+macro_rules! stderr {
+
+	($($arg:tt)*) => (
+
+		match writeln! (
+			&mut ::std::io::stderr (),
+			$($arg)*,
+		) {
+
+			Ok (_) => {},
+
+			Err (x) => panic! (
+				"Unable to write to stderr (file handle closed?): {}",
+				x),
+
+		}
+
+	)
+
+}
+
+struct BlockReference {
+	offset: u64,
+	size: u64,
+}
 
 #[repr (C)]
 struct BinaryHeader {
@@ -69,7 +96,7 @@ impl Header {
 
 	pub fn read (
 		header_bytes: & [u8; 512],
-	) -> Result <Option <Header>, String> {
+	) -> Result <Header, String> {
 
 		let binary_header: BinaryHeader =
 			unsafe { mem::transmute (* header_bytes) };
@@ -91,7 +118,7 @@ impl Header {
 
 	 	} else {
 
-			Ok (Some (Header {
+			Ok (Header {
 
 				name: tar_string (
 					& binary_header.name),
@@ -150,7 +177,7 @@ impl Header {
 				pad: [u8; 17],
 */
 
-			}))
+			})
 
 		}
 
@@ -236,33 +263,37 @@ fn tar_type (
 
 }
 
-fn work () -> Result <Option <Header>, String> {
-
-	let mut stdin =
-		std::io::stdin ();
-
-	// read header
+fn write_tar_contents (
+	input: &mut Read,
+	output: &mut Write,
+	headers: &mut Vec <[u8; 512]>,
+	block_references: &mut Vec <BlockReference>,
+) -> Result <u64, String> {
 
 	let mut header_bytes: [u8; 512] =
 		[0; 512];
 
 	let mut null_count = 0;
 
+	let mut offset = 0;
+
 	loop {
 
-		if stdin.read_exact (
+		// read header
+
+		if input.read_exact (
 			&mut header_bytes,
 		).is_err () {
 
 			if null_count >= 2 {
-				return Ok (None)
+				return Ok (offset)
 			}
 
 		}
 
 		if header_bytes.as_ref () == [0; 512].as_ref () {
 
-			println! ("NUL");
+			stderr! ("NUL");
 
 			null_count += 1;
 
@@ -270,76 +301,215 @@ fn work () -> Result <Option <Header>, String> {
 
 		}
 
-		break;
+		if null_count > 0 {
+
+			panic! (
+				"NUL in middle of archive");
+
+		}
+
+		// interpret header
+
+		let header = try! (
+			Header::read (
+				& header_bytes)
+		);
+
+		// store header
+
+		headers.push (
+			header_bytes);
+
+		// copy file
+
+		let blocks = 0
+			+ (header.size >> 9)
+			+ (if (header.size & 0x1ff) != 0 { 1 } else { 0 });
+
+		let mut content_bytes: [u8; 512] =
+			[0; 512];
+
+		for _block_index in 0 .. blocks {
+
+			try! {
+				input.read_exact (
+					&mut content_bytes,
+				).or (
+					Err ("Input error"),
+				)
+			};
+
+			output.write (
+				& content_bytes);
+
+		}
+
+		block_references.push (
+			BlockReference {
+				offset: offset,
+				size: blocks * 512,
+			}
+		);
+
+		offset +=
+			blocks * 512;
 
 	}
 
-	let header = match try! (
-		Header::read (
-			& header_bytes)
-	) {
-		Some (header) => header,
-		None => return Ok (None),
-	};
+}
 
-	// skip file contents
+fn write_tar_headers (
+	headers: & Vec <[u8; 512]>,
+	output: &mut Write,
+	initial_offset: u64,
+	block_references: &mut Vec <BlockReference>,
+) -> Result <u64, String> {
 
-	let blocks = 0
-		+ (header.size >> 9)
-		+ (if (header.size & 0x1ff) != 0 { 1 } else { 0 });
+	let mut offset =
+		initial_offset;
 
-	let mut scratch_bytes: [u8; 512] =
-		[0; 512];
+	for header_bytes in headers {
 
-	for block_index in 0 .. blocks {
+		output.write (
+			header_bytes);
 
-		try! {
-			stdin.read_exact (
-				&mut scratch_bytes,
-			).or (
-				Err ("Input error"),
-			)
+		block_references.push (
+			BlockReference {
+				offset: offset,
+				size: 512,
+			}
+		);
+
+		offset += 512;
+
+	}
+
+	Ok (offset)
+
+}
+
+fn write_wbspack_footer (
+	output: &mut Write,
+	block_references: & Vec <BlockReference>,
+) -> Result <(), String> {
+
+	output.write (
+		b"BLOCKS START\0\0\0\0");
+
+	for block_reference in block_references {
+
+		let binary_block_reference: & [u8; 16] = unsafe {
+			mem::transmute::<& BlockReference, & [u8; 16]> (
+				block_reference)
 		};
 
+		output.write (
+			binary_block_reference);
+
 	}
 
-	// return
+	let binary_block_reference_count: & [u8; 8] = unsafe {
+		mem::transmute::<& usize, & [u8; 8]> (
+			& block_references.len ())
+	};
 
-	Ok (Some (header))
+	output.write (
+		b"BLOCKS END\0\0\0\0\0\0");
+
+	output.write (
+		binary_block_reference_count);
+
+	output.write (
+		b"\0\0\0\0\0\0\0\0");
+
+	output.write (
+		b"WBS PACK END\0\0\0\0");
+
+	Ok (())
+
+}
+
+fn write_wbspack_header (
+	output: &mut Write,
+) -> Result <(), String> {
+
+	for header_line in [
+		b"WBS PACK 0\0\0\0\0\0\0",
+		b"GNU TAR\0\0\0\0\0\0\0\0\0",
+	].iter () {
+
+		output.write (
+			* header_line);
+
+	}
+
+	Ok (())
+
+}
+
+fn work () -> Result <(), String> {
+
+	let mut stdin =
+		std::io::stdin ();
+
+	let mut stdout =
+		std::io::stdout ();
+
+	let mut headers =
+		Vec::new ();
+
+	let mut block_references =
+		Vec::new ();
+
+	try! {
+		write_wbspack_header (
+			&mut stdout)
+	};
+
+	let mut offset = try! (
+		write_tar_contents (
+			&mut stdin,
+			&mut stdout,
+			&mut headers,
+			&mut block_references)
+	);
+
+	offset = try! (
+		write_tar_headers (
+			& headers,
+			&mut stdout,
+			offset,
+			&mut block_references)
+	);
+
+	write_wbspack_footer (
+		&mut stdout,
+		& block_references);
+
+	Ok (())
 
 }
 
 fn main () {
 
-	loop {
+	match work () {
 
-		match work () {
+		Ok (()) => {
 
-			Ok (Some (header)) => {
+			stderr! (
+				"All done!");
 
-				println! (
-					"{:?}: {} ({})",
-					header.typeflag,
-					String::from_utf8 (
-						header.name,
-					).unwrap (),
-					header.size)
+		},
 
-			},
+		Err (error) => {
 
-			Ok (None) => return,
+			stderr! (
+				"Error: {}",
+				error);
 
-			Err (error) => {
+			std::process::exit (1)
 
-				println! (
-					"no: {}",
-					error);
-
-				std::process::exit (1)
-
-			},
-
-		}
+		},
 
 	}
 
