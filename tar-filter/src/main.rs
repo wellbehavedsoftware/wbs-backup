@@ -1,21 +1,26 @@
+use std::env;
+use std::error::Error;
+use std::fmt;
+use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::mem;
+use std::process;
 
 macro_rules! stderr {
 
-	($($arg:tt)*) => (
+	( $ ( $arg : tt ) * ) => (
 
 		match writeln! (
 			&mut ::std::io::stderr (),
-			$($arg)*,
+			$ ( $arg ) *,
 		) {
 
 			Ok (_) => {},
 
-			Err (x) => panic! (
-				"Unable to write to stderr (file handle closed?): {}",
-				x),
+			Err (error) => panic! (
+				"Unable to write to stderr: {}",
+				error),
 
 		}
 
@@ -23,13 +28,60 @@ macro_rules! stderr {
 
 }
 
-struct BlockReference {
-	offset: u64,
-	size: u64,
+#[ derive (Debug) ]
+struct TfError {
+
+	error_message: String,
+
 }
 
-#[repr (C)]
+impl fmt::Display for TfError {
+
+	fn fmt (
+		&self,
+		formatter: &mut fmt::Formatter,
+	) -> fmt::Result {
+
+		write! (
+			formatter,
+			"{}",
+			self.error_message)
+
+	}
+
+}
+
+impl From <String> for TfError {
+
+	fn from (error: String) -> TfError {
+		TfError {
+			error_message: error,
+		}
+	}
+
+}
+
+impl From <io::Error> for TfError {
+
+	fn from (error: io::Error) -> TfError {
+		TfError {
+			error_message: error.description ().to_string (),
+		}
+	}
+
+}
+
+#[ repr (C) ]
+struct BlockReference {
+
+	offset: u64,
+	size: u64,
+
+}
+
+#[ repr (C) ]
 struct BinaryHeader {
+
 	name: [u8; 100],
 	mode: [u8; 8],
 	uid: [u8; 8],
@@ -54,15 +106,19 @@ struct BinaryHeader {
 	isextended: [u8; 1],
 	realsize: [u8; 12],
 	pad: [u8; 17],
+
 }
 
-#[repr (C)]
+#[ repr (C) ]
 struct BinarySparseHeader {
+
 	offset: [u8; 12],
 	numbytes: [u8; 12],
+
 }
 
 pub struct Header {
+
 	pub name: Vec <u8>,
 	pub mode: u32,
 	pub uid: u32,
@@ -79,10 +135,12 @@ pub struct Header {
 	pub atime: u64,
 	pub ctime: u64,
 	pub offset: u64,
+
 }
 
-#[derive (Debug)]
+#[ derive (Debug) ]
 pub enum Type {
+
 	Regular,
 	Link,
 	SymbolicLink,
@@ -90,31 +148,34 @@ pub enum Type {
 	BlockSpecial,
 	Directory,
 	Fifo,
+
 }
 
 impl Header {
 
-	pub fn read (
+	fn read (
 		header_bytes: & [u8; 512],
-	) -> Result <Header, String> {
+	) -> Result <Header, TfError> {
 
 		let binary_header: BinaryHeader =
 			unsafe { mem::transmute (* header_bytes) };
 
 		if binary_header.magic != * b"ustar " {
 
-			Err (
-				format! (
+			Err (TfError {
+				error_message: format! (
 					"Unrecognised tar format: {:?} {:?}",
 					binary_header.magic,
-					binary_header.version))
+					binary_header.version),
+			})
 
 		} else if binary_header.version != * b" \0" {
 
-			Err (
-				format! (
+			Err (TfError {
+				error_message: format! (
 					"Unrecognised gnu tar version: {:?}",
-					binary_header.version))
+					binary_header.version),
+			})
 
 	 	} else {
 
@@ -266,16 +327,15 @@ fn tar_type (
 fn write_tar_contents (
 	input: &mut Read,
 	output: &mut Write,
+	offset: &mut u64,
 	headers: &mut Vec <[u8; 512]>,
 	block_references: &mut Vec <BlockReference>,
-) -> Result <u64, String> {
+) -> Result <(), TfError> {
 
 	let mut header_bytes: [u8; 512] =
 		[0; 512];
 
 	let mut null_count = 0;
-
-	let mut offset = 0;
 
 	loop {
 
@@ -286,14 +346,12 @@ fn write_tar_contents (
 		).is_err () {
 
 			if null_count >= 2 {
-				return Ok (offset)
+				return Ok (())
 			}
 
 		}
 
 		if header_bytes.as_ref () == [0; 512].as_ref () {
-
-			stderr! ("NUL");
 
 			null_count += 1;
 
@@ -331,27 +389,24 @@ fn write_tar_contents (
 
 		for _block_index in 0 .. blocks {
 
-			try! {
+			try! (
 				input.read_exact (
-					&mut content_bytes,
-				).or (
-					Err ("Input error"),
-				)
-			};
+					&mut content_bytes));
 
-			output.write (
-				& content_bytes);
+			try! (
+				output.write (
+					& content_bytes));
 
 		}
 
 		block_references.push (
 			BlockReference {
-				offset: offset,
+				offset: * offset,
 				size: blocks * 512,
 			}
 		);
 
-		offset +=
+		* offset +=
 			blocks * 512;
 
 	}
@@ -361,40 +416,39 @@ fn write_tar_contents (
 fn write_tar_headers (
 	headers: & Vec <[u8; 512]>,
 	output: &mut Write,
-	initial_offset: u64,
+	offset: &mut u64,
 	block_references: &mut Vec <BlockReference>,
-) -> Result <u64, String> {
-
-	let mut offset =
-		initial_offset;
+) -> Result <(), TfError> {
 
 	for header_bytes in headers {
 
-		output.write (
-			header_bytes);
+		try! (
+			output.write (
+				header_bytes));
 
 		block_references.push (
 			BlockReference {
-				offset: offset,
+				offset: * offset,
 				size: 512,
 			}
 		);
 
-		offset += 512;
+		* offset += 512;
 
 	}
 
-	Ok (offset)
+	Ok (())
 
 }
 
 fn write_wbspack_footer (
 	output: &mut Write,
 	block_references: & Vec <BlockReference>,
-) -> Result <(), String> {
+) -> Result <(), TfError> {
 
-	output.write (
-		b"BLOCKS START\0\0\0\0");
+	try! (
+		output.write (
+			b"BLOCKS START\0\0\0\0"));
 
 	for block_reference in block_references {
 
@@ -403,8 +457,9 @@ fn write_wbspack_footer (
 				block_reference)
 		};
 
-		output.write (
-			binary_block_reference);
+		try! (
+			output.write (
+				binary_block_reference));
 
 	}
 
@@ -413,17 +468,21 @@ fn write_wbspack_footer (
 			& block_references.len ())
 	};
 
-	output.write (
-		b"BLOCKS END\0\0\0\0\0\0");
+	try! (
+		output.write (
+			b"BLOCKS END\0\0\0\0\0\0"));
 
-	output.write (
-		binary_block_reference_count);
+	try! (
+		output.write (
+			binary_block_reference_count));
 
-	output.write (
-		b"\0\0\0\0\0\0\0\0");
+	try! (
+		output.write (
+			b"\0\0\0\0\0\0\0\0"));
 
-	output.write (
-		b"WBS PACK END\0\0\0\0");
+	try! (
+		output.write (
+			b"WBS PACK END\0\0\0\0"));
 
 	Ok (())
 
@@ -431,15 +490,16 @@ fn write_wbspack_footer (
 
 fn write_wbspack_header (
 	output: &mut Write,
-) -> Result <(), String> {
+) -> Result <(), TfError> {
 
 	for header_line in [
 		b"WBS PACK 0\0\0\0\0\0\0",
 		b"GNU TAR\0\0\0\0\0\0\0\0\0",
 	].iter () {
 
-		output.write (
-			* header_line);
+		try! (
+			output.write (
+				* header_line));
 
 	}
 
@@ -447,13 +507,15 @@ fn write_wbspack_header (
 
 }
 
-fn work () -> Result <(), String> {
+fn work () -> Result <(), TfError> {
 
 	let mut stdin =
 		std::io::stdin ();
 
 	let mut stdout =
 		std::io::stdout ();
+
+	let mut offset = 0;
 
 	let mut headers =
 		Vec::new ();
@@ -466,25 +528,25 @@ fn work () -> Result <(), String> {
 			&mut stdout)
 	};
 
-	let mut offset = try! (
+	try! (
 		write_tar_contents (
 			&mut stdin,
 			&mut stdout,
+			&mut offset,
 			&mut headers,
-			&mut block_references)
-	);
+			&mut block_references));
 
-	offset = try! (
+	try! (
 		write_tar_headers (
 			& headers,
 			&mut stdout,
-			offset,
-			&mut block_references)
-	);
+			&mut offset,
+			&mut block_references));
 
-	write_wbspack_footer (
-		&mut stdout,
-		& block_references);
+	try! (
+		write_wbspack_footer (
+			&mut stdout,
+			& block_references));
 
 	Ok (())
 
@@ -492,24 +554,50 @@ fn work () -> Result <(), String> {
 
 fn main () {
 
-	match work () {
+	let arguments: Vec <String> =
+		env::args ().skip (1).collect ();
 
-		Ok (()) => {
+	if arguments.len () == 0 {
 
-			stderr! (
-				"All done!");
+		stderr! (
+			"Usage error");
 
-		},
+		process::exit (1);
 
-		Err (error) => {
+	}
 
-			stderr! (
-				"Error: {}",
-				error);
+	if arguments [0] == "create" {
 
-			std::process::exit (1)
+		match work () {
 
-		},
+			Ok (()) => {
+
+				stderr! (
+					"All done!");
+
+				process::exit (0)
+
+			},
+
+			Err (error) => {
+
+				stderr! (
+					"Error: {}",
+					error);
+
+				process::exit (1)
+
+			},
+
+		}
+
+	} else {
+
+		stderr! (
+			"Unknown command: {}",
+			arguments [0]);
+
+		process::exit (1)
 
 	}
 
