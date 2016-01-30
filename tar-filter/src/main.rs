@@ -34,7 +34,8 @@ fn work () -> Result <(), TfError> {
 
 	try! {
 		wbspack::write_header (
-			&mut stdout)
+			&mut stdout,
+			&mut offset)
 	};
 
 	try! (
@@ -47,7 +48,7 @@ fn work () -> Result <(), TfError> {
 
 	try! (
 		tarpack::write_headers (
-			& headers,
+			&    headers,
 			&mut stdout,
 			&mut offset,
 			&mut block_references));
@@ -55,7 +56,8 @@ fn work () -> Result <(), TfError> {
 	try! (
 		wbspack::write_footer (
 			&mut stdout,
-			& block_references));
+			&    block_references,
+			&mut offset));
 
 	Ok (())
 
