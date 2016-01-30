@@ -5,3 +5,4 @@
 /backup-daemon/target
 /backup-daemon/*.log
 /tar-filter/target
+/tar-filter/tmp

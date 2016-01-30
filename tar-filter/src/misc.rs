@@ -6,10 +6,8 @@ macro_rules! stderr {
 
 	( $ ( $arg : tt ) * ) => (
 
-		use std::io::Write;
-
 		match writeln! (
-			&mut ::std::io::stderr (),
+			&mut ::std::io::stderr () as &mut ::std::io::Write,
 			$ ( $arg ) *,
 		) {
 
