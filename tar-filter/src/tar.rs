@@ -72,6 +72,9 @@ pub enum Type {
 	Directory,
 	Fifo,
 
+	LongName,
+	LongLink,
+
 }
 
 impl Header {
@@ -234,6 +237,9 @@ fn tar_type (
 		b'4' => Type::BlockSpecial,
 		b'5' => Type::Directory,
 		b'6' => Type::Fifo,
+
+		b'K' => Type::LongLink,
+		b'L' => Type::LongName,
 
 		_ => {
 
