@@ -11,9 +11,18 @@ pub struct Work {
 	pub null_count: u64,
 }
 
-pub struct WorkBlock {
-	pub header: [u8; 512],
-	pub content_block: wbspack::BlockReference,
+pub enum WorkBlock {
+
+	Content {
+		header: [u8; 512],
+		reference: wbspack::BlockReference,
+	},
+
+	Metadata {
+		header: [u8; 512],
+		content: Vec <u8>,
+	},
+
 }
 
 pub fn write_contents (
@@ -66,41 +75,84 @@ pub fn write_contents (
 				& header_bytes)
 		);
 
-		// store header and content block
-
 		let blocks = 0
 			+ (header.size >> 9)
 			+ (if (header.size & 0x1ff) != 0 { 1 } else { 0 });
 
-		work.blocks.push (
-			WorkBlock {
-				header: header_bytes,
-				content_block: wbspack::BlockReference {
-					offset: * offset,
-					size: blocks * 512,
+		match header.typeflag {
+
+			tar::Type::Regular
+			| tar::Type::Link
+			| tar::Type::SymbolicLink
+			| tar::Type::CharacterSpecial
+			| tar::Type::BlockSpecial
+			| tar::Type::Directory
+			| tar::Type::Fifo => {
+
+				// store header and content block
+
+				work.blocks.push (
+					WorkBlock::Content {
+						header: header_bytes,
+						reference: wbspack::BlockReference {
+							offset: * offset,
+							size: blocks * 512,
+						}
+					}
+				);
+
+				// copy file
+
+				let mut content_bytes: [u8; 512] =
+					[0; 512];
+
+				for _block_index in 0 .. blocks {
+
+					try! (
+						input.read_exact (
+							&mut content_bytes));
+
+					try! (
+						output.write (
+							& content_bytes));
+
 				}
-			}
-		);
 
-		// copy file
+				* offset +=
+					blocks * 512;
 
-		let mut content_bytes: [u8; 512] =
-			[0; 512];
+			},
 
-		for _block_index in 0 .. blocks {
+			tar::Type::LongName
+			| tar::Type::LongLink => {
 
-			try! (
-				input.read_exact (
-					&mut content_bytes));
+				// read content
 
-			try! (
-				output.write (
-					& content_bytes));
+				let mut content_bytes: Vec <u8> =
+					Vec::with_capacity (
+						blocks as usize * 512);
+
+				unsafe {
+					content_bytes.set_len (
+						blocks as usize * 512);
+				}
+
+				try! (
+					input.read_exact (
+						&mut content_bytes));
+
+				// store header and content
+
+				work.blocks.push (
+					WorkBlock::Metadata {
+						header: header_bytes,
+						content: content_bytes,
+					}
+				);
+
+			},
 
 		}
-
-		* offset +=
-			blocks * 512;
 
 	}
 
@@ -122,21 +174,66 @@ pub fn write_headers (
 
 	for block in work.blocks.iter () {
 
-		try! (
-			output.write (
-				& block.header));
+		match block {
 
-		all_blocks.push (
-			wbspack::BlockReference {
-				offset: * offset,
-				size: 512,
+			& WorkBlock::Content {
+				header,
+				reference,
+			} => {
+
+				try! (
+					output.write (
+						& header));
+
+				all_blocks.push (
+					wbspack::BlockReference {
+						offset: * offset,
+						size: 512,
+					}
+				);
+
+				all_blocks.push (
+					reference);
+
+				* offset += 512;
+
+			},
+
+			& WorkBlock::Metadata {
+				header,
+				ref content,
+			} => {
+
+				try! (
+					output.write (
+						& header));
+
+				all_blocks.push (
+					wbspack::BlockReference {
+						offset: * offset,
+						size: 512,
+					}
+				);
+
+				* offset += 512;
+
+				try! (
+					output.write (
+						& content));
+
+				all_blocks.push (
+					wbspack::BlockReference {
+						offset: * offset,
+						size: content.len () as u64,
+					}
+				);
+
+				* offset +=
+					content.len () as u64;
+
 			}
-		);
 
-		all_blocks.push (
-			block.content_block);
-
-		* offset += 512;
+		}
 
 	}
 
