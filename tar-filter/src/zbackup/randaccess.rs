@@ -105,7 +105,7 @@ impl <'a> RandomAccess <'a> {
 						offset + index_entry.size,
 
 				});
-							
+
 				offset +=
 					index_entry.size;
 
@@ -133,7 +133,7 @@ impl <'a> RandomAccess <'a> {
 						offset + size,
 
 				});
-							
+
 				offset +=
 					size;
 

@@ -240,7 +240,7 @@ pub fn read_index <P: AsRef <Path>> (
 
 	Ok (index_entries)
 
-}	
+}
 
 pub fn read_bundle <P: AsRef <Path>> (
 	path: P,

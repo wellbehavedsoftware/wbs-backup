@@ -86,10 +86,10 @@ impl ZBackup {
 					master_index.insert (
 						to_array (chunk_record.get_id ()),
 						MasterIndexEntry {
-				
+
 							bundle_id:
 								to_array (index_bundle_header.get_id ()),
-				
+
 							size:
 								chunk_record.get_size () as u64
 
@@ -379,7 +379,7 @@ impl ZBackup {
 					});
 				},
 
-			};				
+			};
 
 			for (found_chunk_id, found_chunk_data) in try! (
 				read_bundle (
@@ -427,7 +427,7 @@ impl ZBackup {
 							chunk_id.to_hex ()),
 				}),
 
-		};				
+		};
 
 	}
 

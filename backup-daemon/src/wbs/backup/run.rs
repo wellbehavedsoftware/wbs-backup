@@ -25,7 +25,7 @@ pub fn run_script (
 		.output ()
 		.unwrap_or_else (
 			|err|
-			
+
 			panic! (
 				"error running script {}: {}",
 				script,
@@ -46,14 +46,14 @@ pub fn run_script (
 		File::create (
 			& output_path
 		).unwrap_or_else (
-			|err| 
-			
+			|err|
+
 			panic! (
 				"error creating {} log {}: {}",
 				name,
 				output_path.display (),
 				err)
-		
+
 		);
 
 	write_process_output (
@@ -195,7 +195,7 @@ pub fn do_snapshot (
 
 		state.write_state (config);
 
-		let snapshot_script = 
+		let snapshot_script =
 			job_config.snapshot_script.clone ().unwrap ();
 
 		let snapshot_log =
@@ -330,7 +330,7 @@ pub fn do_send_snapshot (
 
 		state.write_state (config);
 
-		let send_script = 
+		let send_script =
 			job_config.send_script.clone ().unwrap ();
 
 		let send_log =
