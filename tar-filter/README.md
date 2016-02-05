@@ -9,9 +9,16 @@ It's designed to work with [ZBackup](http://zbackup.org/), which should be able
 to more efficiently deduplicate the file data, which is less likely to change
 than the metadata, in many cases.
 
+This also includes an implementation of zbackup's restore algorithm, which will
+be used to implement other useful features in the future.
+
 ## Wish list
 
-* Detect and store extended metadata, eg long filenames, at the end of the pack.
-* Checksums.
-* Buffered reads and writes.
+* Detect and store extended metadata, eg long filenames, at the end of the pack
+* Checksums
+* Buffered reads and writes
 * Try aligning all data on 64k boundaries, zbackup's default block size
+* Parallel zbackup restore
+* Random-access zbackup restore
+* Encrypted zbackup restore
+* Verify checksums during zbackup restore
