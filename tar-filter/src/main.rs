@@ -1,23 +1,32 @@
+extern crate libc;
+extern crate protobuf;
+extern crate rustc_serialize;
+
 use std::env;
 use std::fs::File;
+use std::io;
 use std::process;
 
 use misc::*;
+use zbackup::ZBackup;
 
 #[ macro_use ]
 mod misc;
 
+mod lzma;
 mod tar;
 mod tarpack;
 mod wbspack;
+mod zbackup;
+mod zbackup_proto;
 
 fn pack () -> Result <(), TfError> {
 
 	let mut stdin =
-		std::io::stdin ();
+		io::stdin ();
 
 	let mut stdout =
-		std::io::stdout ();
+		io::stdout ();
 
 	let mut offset = 0;
 
@@ -61,12 +70,31 @@ fn unpack (
 				filename));
 
 	let mut stdout =
-		std::io::stdout ();
+		io::stdout ();
 
 	try! (
 		wbspack::unpack (
 			&mut input,
 			&mut stdout));
+
+	Ok (())
+
+}
+
+fn test (
+	repository: & str,
+	backup_name: & str,
+) -> Result <(), TfError> {
+
+	let mut zbackup =
+		try! (
+			ZBackup::open (
+				repository));
+
+	try! (
+		zbackup.restore (
+			backup_name,
+			& mut io::stdout ()));
 
 	Ok (())
 
@@ -128,6 +156,41 @@ fn main () {
 		}
 
 		match unpack (& arguments [1]) {
+
+			Ok (()) => {
+
+				stderr! (
+					"All done!");
+
+				process::exit (0)
+
+			},
+
+			Err (error) => {
+
+				stderr! (
+					"Error: {}",
+					error);
+
+				process::exit (1)
+
+			},
+
+		}
+
+	} else if arguments [0] == "restore" {
+
+		if arguments.len () != 3 {
+
+			stderr! (
+				"Usage error");
+
+		}
+
+		match test (
+			& arguments [1],
+			& arguments [2],
+		) {
 
 			Ok (()) => {
 

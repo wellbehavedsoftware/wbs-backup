@@ -2,6 +2,8 @@ use std::error::Error;
 use std::fmt;
 use std::io;
 
+use protobuf;
+
 macro_rules! stderr {
 
 	( $ ( $arg : tt ) * ) => (
@@ -59,6 +61,26 @@ impl From <String> for TfError {
 impl From <io::Error> for TfError {
 
 	fn from (error: io::Error) -> TfError {
+		TfError {
+			error_message: error.description ().to_string (),
+		}
+	}
+
+}
+
+impl From <protobuf::error::ProtobufError> for TfError {
+
+	fn from (error: protobuf::error::ProtobufError) -> TfError {
+		TfError {
+			error_message: error.description ().to_string (),
+		}
+	}
+
+}
+
+impl From <Box <Error>> for TfError {
+
+	fn from (error: Box <Error>) -> TfError {
 		TfError {
 			error_message: error.description ().to_string (),
 		}
