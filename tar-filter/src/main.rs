@@ -80,6 +80,44 @@ fn unpack (
 
 }
 
+fn zunpack (
+	backup_path: &str,
+) -> Result <(), TfError> {
+
+	let backup_split: Vec <& str> =
+		backup_path.splitn (
+			2,
+			"/backups/",
+		).collect ();
+
+	let repository_path =
+		& backup_split [0];
+
+	let backup_name =
+		& backup_split [1];
+
+	let mut zbackup =
+		try! (
+			ZBackup::open (
+				repository_path));
+
+	let mut input =
+		try! (
+			zbackup.open_backup (
+				backup_name));
+
+	let mut stdout =
+		io::stdout ();
+
+	try! (
+		wbspack::unpack (
+			&mut input,
+			&mut stdout));
+
+	Ok (())
+
+}
+
 fn restore (
 	backup_path: & str,
 ) -> Result <(), TfError> {
@@ -103,6 +141,36 @@ fn restore (
 
 	try! (
 		zbackup.restore (
+			backup_name,
+			& mut io::stdout ()));
+
+	Ok (())
+
+}
+
+fn restore_test (
+	backup_path: & str,
+) -> Result <(), TfError> {
+
+	let backup_split: Vec <& str> =
+		backup_path.splitn (
+			2,
+			"/backups/",
+		).collect ();
+
+	let repository_path =
+		& backup_split [0];
+
+	let backup_name =
+		& backup_split [1];
+
+	let mut zbackup =
+		try! (
+			ZBackup::open (
+				repository_path));
+
+	try! (
+		zbackup.restore_test (
 			backup_name,
 			& mut io::stdout ()));
 
@@ -188,6 +256,38 @@ fn main () {
 
 		}
 
+	} else if arguments [0] == "zunpack" {
+
+		if arguments.len () != 2 {
+
+			stderrln! (
+				"Usage error");
+
+		}
+
+		match zunpack (& arguments [1]) {
+
+			Ok (()) => {
+
+				stderrln! (
+					"All done!");
+
+				process::exit (0)
+
+			},
+
+			Err (error) => {
+
+				stderrln! (
+					"Error: {}",
+					error);
+
+				process::exit (1)
+
+			},
+
+		}
+
 	} else if arguments [0] == "restore" {
 
 		if arguments.len () != 2 {
@@ -198,6 +298,40 @@ fn main () {
 		}
 
 		match restore (
+			& arguments [1],
+		) {
+
+			Ok (()) => {
+
+				stderrln! (
+					"All done!");
+
+				process::exit (0)
+
+			},
+
+			Err (error) => {
+
+				stderrln! (
+					"Error: {}",
+					error);
+
+				process::exit (1)
+
+			},
+
+		}
+
+	} else if arguments [0] == "restore-test" {
+
+		if arguments.len () != 2 {
+
+			stderrln! (
+				"Usage error");
+
+		}
+
+		match restore_test (
 			& arguments [1],
 		) {
 

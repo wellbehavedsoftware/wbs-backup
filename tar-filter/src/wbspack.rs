@@ -3,7 +3,6 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
-use std::fs::File;
 use std::mem;
 
 use misc::*;
@@ -18,8 +17,8 @@ pub struct BlockReference {
 }
 
 pub fn write_header (
-	output: &mut Write,
-	offset: &mut u64,
+	output: & mut Write,
+	offset: & mut u64,
 ) -> Result <(), TfError> {
 
 	for header_line in [
@@ -43,7 +42,7 @@ pub fn write_header (
 }
 
 pub fn read_header (
-	input: &mut Read,
+	input: & mut Read,
 ) -> Result <(), TfError> {
 
 	let mut header_line: [u8; 16] =
@@ -53,7 +52,7 @@ pub fn read_header (
 
 	try! (
 		input.read_exact (
-			&mut header_line));
+			& mut header_line));
 
 	if header_line != * b"WBS PACK\0\0\0\0\0\0\0\0" {
 
@@ -68,7 +67,7 @@ pub fn read_header (
 
 	try! (
 		input.read_exact (
-			&mut header_line));
+			& mut header_line));
 
 	if header_line != * b"HEADER START\0\0\0\0" {
 
@@ -88,7 +87,7 @@ pub fn read_header (
 
 		try! (
 			input.read_exact (
-				&mut header_line));
+				& mut header_line));
 
 		// read version 0
 
@@ -120,8 +119,8 @@ pub fn read_header (
 }
 
 pub fn write_footer (
-	output: &mut Write,
-	offset: &mut u64,
+	output: & mut Write,
+	offset: & mut u64,
 	block_references: & Vec <BlockReference>,
 ) -> Result <(), TfError> {
 
@@ -196,8 +195,8 @@ pub fn write_footer (
 
 }
 
-pub fn read_footer (
-	input: &mut File,
+pub fn read_footer <F: Read + Seek> (
+	input: & mut F,
 ) -> Result <Vec <BlockReference>, TfError> {
 
 	let mut footer_line: [u8; 16] =
@@ -211,7 +210,7 @@ pub fn read_footer (
 
 	try! (
 		input.read_exact (
-			&mut footer_line));
+			& mut footer_line));
 
 	if footer_line != * b"WBS PACK END\0\0\0\0" {
 
@@ -230,7 +229,7 @@ pub fn read_footer (
 
 	try! (
 		input.read_exact (
-			&mut footer_line));
+			& mut footer_line));
 
 	let blocks_location = unsafe {
 		mem::transmute::<[u8; 16], BlockReference> (
@@ -246,7 +245,7 @@ pub fn read_footer (
 
 	try! (
 		input.read_exact (
-			&mut footer_line));
+			& mut footer_line));
 
 	if footer_line != * b"BLOCKS START\0\0\0\0" {
 
@@ -267,7 +266,7 @@ pub fn read_footer (
 
 		try! (
 			input.read_exact (
-				&mut footer_line));
+				& mut footer_line));
 
 		block_references.push (unsafe {
 			mem::transmute::<[u8; 16], BlockReference> (
@@ -280,7 +279,7 @@ pub fn read_footer (
 
 	try! (
 		input.read_exact (
-			&mut footer_line));
+			& mut footer_line));
 
 	if footer_line != * b"BLOCKS END\0\0\0\0\0\0" {
 
@@ -295,9 +294,9 @@ pub fn read_footer (
 
 }
 
-pub fn copy_blocks (
-	input: &mut File,
-	output: &mut Write,
+pub fn copy_blocks <Input: Read + Seek> (
+	input: & mut Input,
+	output: & mut Write,
 	blocks: & Vec <BlockReference>,
 ) -> Result <(), TfError> {
 
@@ -314,7 +313,7 @@ pub fn copy_blocks (
 
 		try! (
 			io::copy (
-				&mut block_reader,
+				& mut block_reader,
 				output));
 
 	}
@@ -323,9 +322,9 @@ pub fn copy_blocks (
 
 }
 
-pub fn unpack (
-	input: &mut File,
-	output: &mut Write,
+pub fn unpack <F: Read + Seek> (
+	input: & mut F,
+	output: & mut Write,
 ) -> Result <(), TfError> {
 
 	try! (

@@ -10,12 +10,18 @@ use std::io::Read;
 use std::io::Write;
 
 use misc::*;
+use zbackup::*;
 use zbackup::proto;
 use zbackup::read::*;
 
+struct MasterIndexEntry {
+	pub bundle_id: [u8; 24],
+	pub size: u64,
+}
+
 pub struct ZBackup {
 	path: String,
-	master_index: HashMap <[u8; 24], [u8; 24]>,
+	master_index: HashMap <[u8; 24], MasterIndexEntry>,
 	chunk_cache: HashMap <[u8; 24], Vec <u8>>,
 }
 
@@ -43,7 +49,7 @@ impl ZBackup {
 		stderr! (
 			"Loading indexes");
 
-		let mut master_index: HashMap <[u8; 24], [u8; 24]> =
+		let mut master_index: HashMap <[u8; 24], MasterIndexEntry> =
 			HashMap::with_capacity (0x10000);
 
 		let mut count: u64 = 0;
@@ -79,7 +85,16 @@ impl ZBackup {
 
 					master_index.insert (
 						to_array (chunk_record.get_id ()),
-						to_array (index_bundle_header.get_id ()));
+						MasterIndexEntry {
+				
+							bundle_id:
+								to_array (index_bundle_header.get_id ()),
+				
+							size:
+								chunk_record.get_size () as u64
+
+						},
+					);
 
 				}
 
@@ -107,11 +122,10 @@ impl ZBackup {
 
 	}
 
-	pub fn restore (
+	pub fn read_and_expand_backup (
 		& mut self,
-		backup_name: & str,
-		output: & mut Write,
-	) -> Result <(), TfError> {
+		backup_name: &str,
+	) -> Result <Vec <u8>, TfError> {
 
 		// load backup
 
@@ -158,6 +172,22 @@ impl ZBackup {
 		stderr! (
 			"\n");
 
+		Ok (input.into_inner ())
+
+	}
+
+	pub fn restore (
+		& mut self,
+		backup_name: & str,
+		output: & mut Write,
+	) -> Result <(), TfError> {
+
+		let mut input =
+			Cursor::new (
+				try! (
+					self.read_and_expand_backup (
+						backup_name)));
+
 		// restore backup
 
 		stderr! (
@@ -178,6 +208,96 @@ impl ZBackup {
 
 		stderrln! (
 			"Restore complete");
+
+		Ok (())
+
+	}
+
+	pub fn restore_test (
+		& mut self,
+		backup_name: & str,
+		output: & mut Write,
+	) -> Result <(), TfError> {
+
+		stderr! (
+			"Loading backup {}",
+			backup_name);
+
+		let mut input =
+			try! (
+				RandomAccess::new (
+					self,
+					backup_name));
+
+		let mut buffer: Vec <u8> =
+			Vec::with_capacity (
+				1024 * 1024);
+
+		unsafe {
+
+			buffer.set_len (
+				1024 * 1024);
+
+		}
+
+		// restore backup
+
+		stderr! (
+			"Restoring backup");
+
+		loop {
+
+			let bytes_read =
+				try! (
+					input.read (
+						& mut buffer));
+
+			if bytes_read == 0 {
+				break;
+			}
+
+			try! (
+				output.write (
+					&buffer [0 .. bytes_read ]));
+
+		}
+
+		stderrln! (
+			"Restore complete");
+
+		Ok (())
+
+	}
+
+	pub fn follow_instruction (
+		& mut self,
+		backup_instruction: & proto::BackupInstruction,
+		output: & mut Write,
+	) -> Result <(), TfError> {
+
+		if backup_instruction.has_chunk_to_emit () {
+
+			let chunk_id =
+				to_array (
+					backup_instruction.get_chunk_to_emit ());
+
+			let chunk_data = try! (
+				self.get_chunk (
+					chunk_id));
+
+			try! (
+				output.write (
+					& chunk_data));
+
+		}
+
+		if backup_instruction.has_bytes_to_emit () {
+
+			try! (
+				output.write (
+					backup_instruction.get_bytes_to_emit ()));
+
+		}
 
 		Ok (())
 
@@ -215,29 +335,10 @@ impl ZBackup {
 			coded_input_stream.pop_limit (
 				instruction_old_limit);
 
-			if backup_instruction.has_chunk_to_emit () {
-
-				let chunk_id =
-					to_array (
-						backup_instruction.get_chunk_to_emit ());
-
-				let chunk_data = try! (
-					self.get_chunk (
-						chunk_id));
-
-				try! (
-					output.write (
-						& chunk_data));
-
-			}
-
-			if backup_instruction.has_bytes_to_emit () {
-
-				try! (
-					output.write (
-						backup_instruction.get_bytes_to_emit ()));
-
-			}
+			try! (
+				self.follow_instruction (
+					& backup_instruction,
+					output));
 
 			progress (
 				count);
@@ -263,20 +364,30 @@ impl ZBackup {
 
 			}
 
-			if ! self.master_index.contains_key (& chunk_id) {
-				panic! ();
-			}
+			let index_entry = match
+				self.master_index.get (& chunk_id) {
 
-			let & bundle_id =
-				self.master_index.get (& chunk_id).unwrap ();
+				Some (value) =>
+					value,
+
+				None => {
+					return Err (TfError {
+						error_message:
+							format! (
+								"Missing chunk: {}",
+								chunk_id.to_hex ()),
+					});
+				},
+
+			};				
 
 			for (found_chunk_id, found_chunk_data) in try! (
 				read_bundle (
 					& format! (
 						"{}/bundles/{}/{}",
 						self.path,
-						& bundle_id.to_hex () [0 .. 2],
-						bundle_id.to_hex ()))
+						& index_entry.bundle_id.to_hex () [0 .. 2],
+						index_entry.bundle_id.to_hex ()))
 			) {
 
 				self.chunk_cache.insert (
@@ -293,6 +404,41 @@ impl ZBackup {
 			).unwrap ();
 
 		Ok (chunk_data)
+
+	}
+
+	pub fn get_index_entry (
+		& mut self,
+		chunk_id: & [u8; 24],
+	) -> Result <& MasterIndexEntry, TfError> {
+
+		return match self.master_index.get (
+			chunk_id,
+		) {
+
+			Some (value) =>
+				Ok (value),
+
+			None =>
+				Err (TfError {
+					error_message:
+						format! (
+							"Missing chunk: {}",
+							chunk_id.to_hex ()),
+				}),
+
+		};				
+
+	}
+
+	pub fn open_backup (
+		& mut self,
+		backup_name: & str,
+	) -> Result <RandomAccess, TfError> {
+
+		RandomAccess::new (
+			self,
+			backup_name)
 
 	}
 
