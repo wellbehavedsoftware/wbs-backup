@@ -18,7 +18,6 @@ mod tar;
 mod tarpack;
 mod wbspack;
 mod zbackup;
-mod zbackup_proto;
 
 fn pack () -> Result <(), TfError> {
 
@@ -81,15 +80,26 @@ fn unpack (
 
 }
 
-fn test (
-	repository: & str,
-	backup_name: & str,
+fn restore (
+	backup_path: & str,
 ) -> Result <(), TfError> {
+
+	let backup_split: Vec <& str> =
+		backup_path.splitn (
+			2,
+			"/backups/",
+		).collect ();
+
+	let repository_path =
+		& backup_split [0];
+
+	let backup_name =
+		& backup_split [1];
 
 	let mut zbackup =
 		try! (
 			ZBackup::open (
-				repository));
+				repository_path));
 
 	try! (
 		zbackup.restore (
@@ -107,7 +117,7 @@ fn main () {
 
 	if arguments.len () == 0 {
 
-		stderr! (
+		stderrln! (
 			"Usage error");
 
 		process::exit (1);
@@ -118,7 +128,7 @@ fn main () {
 
 		if arguments.len () != 1 {
 
-			stderr! (
+			stderrln! (
 				"Usage error");
 
 		}
@@ -127,7 +137,7 @@ fn main () {
 
 			Ok (()) => {
 
-				stderr! (
+				stderrln! (
 					"All done!");
 
 				process::exit (0)
@@ -136,7 +146,7 @@ fn main () {
 
 			Err (error) => {
 
-				stderr! (
+				stderrln! (
 					"Error: {}",
 					error);
 
@@ -150,7 +160,7 @@ fn main () {
 
 		if arguments.len () != 2 {
 
-			stderr! (
+			stderrln! (
 				"Usage error");
 
 		}
@@ -159,7 +169,7 @@ fn main () {
 
 			Ok (()) => {
 
-				stderr! (
+				stderrln! (
 					"All done!");
 
 				process::exit (0)
@@ -168,7 +178,7 @@ fn main () {
 
 			Err (error) => {
 
-				stderr! (
+				stderrln! (
 					"Error: {}",
 					error);
 
@@ -180,21 +190,20 @@ fn main () {
 
 	} else if arguments [0] == "restore" {
 
-		if arguments.len () != 3 {
+		if arguments.len () != 2 {
 
-			stderr! (
+			stderrln! (
 				"Usage error");
 
 		}
 
-		match test (
+		match restore (
 			& arguments [1],
-			& arguments [2],
 		) {
 
 			Ok (()) => {
 
-				stderr! (
+				stderrln! (
 					"All done!");
 
 				process::exit (0)
@@ -203,7 +212,7 @@ fn main () {
 
 			Err (error) => {
 
-				stderr! (
+				stderrln! (
 					"Error: {}",
 					error);
 
@@ -215,7 +224,7 @@ fn main () {
 
 	} else {
 
-		stderr! (
+		stderrln! (
 			"Unknown command: {}",
 			arguments [0]);
 

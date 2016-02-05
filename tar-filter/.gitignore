@@ -1,0 +1,4 @@
+/etc/zbackup-proto.proto
+/src/zbackup/proto.rs
+/target
+/tmp
