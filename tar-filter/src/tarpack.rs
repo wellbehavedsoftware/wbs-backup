@@ -6,62 +6,41 @@ use misc::*;
 use tar;
 use wbspack;
 
-pub struct Work {
-	pub blocks: Vec <WorkBlock>,
-	pub null_count: u64,
-}
+pub fn pack (
+	input: & mut Read,
+	packer: & mut wbspack::Packer,
+) -> Result <(), TfError> {
 
-pub enum WorkBlock {
+	let mut null_count: u64 =
+		0;
 
-	Content {
-		header: [u8; 512],
-		reference: wbspack::BlockReference,
-	},
-
-	Metadata {
-		header: [u8; 512],
-		content: Vec <u8>,
-	},
-
-}
-
-pub fn write_contents (
-	input: &mut Read,
-	output: &mut Write,
-	offset: &mut u64,
-) -> Result <Work, TfError> {
-
-	let mut header_bytes: [u8; 512] =
-		[0; 512];
-
-	let mut work = Work {
-		blocks: vec! {},
-		null_count: 0,
-	};
+	let mut deferred: Vec <wbspack::Deferred> =
+		vec! ();
 
 	loop {
 
+		let header_bytes =
+			match try! (
+				read_header (
+					input)) {
+
+			Some (bytes) => bytes,
+
+			None => break,
+
+		};
+
 		// read header
 
-		if input.read_exact (
-			&mut header_bytes,
-		).is_err () {
+		if header_bytes [0 .. 512].as_ref () == [0; 512].as_ref () {
 
-			if work.null_count >= 2 {
-				break;
-			}
-
-		}
-
-		if header_bytes.as_ref () == [0; 512].as_ref () {
-
-			work.null_count += 1;
+			null_count += 1;
 
 			continue;
 
 		}
 
-		if work.null_count > 0 {
+		if null_count > 0 {
 
 			panic! (
 				"NUL in middle of archive");
@@ -81,7 +60,7 @@ pub fn write_contents (
 
 		match header.typeflag {
 
-			tar::Type::Regular
+			  tar::Type::Regular
 			| tar::Type::Link
 			| tar::Type::SymbolicLink
 			| tar::Type::CharacterSpecial
@@ -89,44 +68,42 @@ pub fn write_contents (
 			| tar::Type::Directory
 			| tar::Type::Fifo => {
 
-				// store header and content block
+				// defer header
 
-				work.blocks.push (
-					WorkBlock::Content {
-						header: header_bytes,
-						reference: wbspack::BlockReference {
-							offset: * offset,
-							size: blocks * 512,
-						}
-					}
-				);
+				deferred.push (
+					try! (
+						packer.defer (
+							header_bytes)));
 
 				// copy file
 
-				let mut content_bytes: [u8; 512] =
-					[0; 512];
+				try! (
+					packer.align ());
 
-				for _block_index in 0 .. blocks {
+				let mut content_bytes: Vec <u8> =
+					vec! [0; 512 * blocks as usize];
 
-					try! (
-						input.read_exact (
-							&mut content_bytes));
+				try! (
+					input.read_exact (
+						& mut content_bytes));
 
-					try! (
-						output.write (
-							& content_bytes));
-
-				}
-
-				* offset +=
-					blocks * 512;
+				try! (
+					packer.write (
+						& content_bytes));
 
 			},
 
-			tar::Type::LongName
+			  tar::Type::LongName
 			| tar::Type::LongLink => {
 
-				// read content
+				// defer header
+
+				deferred.push (
+					try! (
+						packer.defer (
+							header_bytes)));
+
+				// defer content
 
 				let mut content_bytes: Vec <u8> =
 					Vec::with_capacity (
@@ -139,16 +116,12 @@ pub fn write_contents (
 
 				try! (
 					input.read_exact (
-						&mut content_bytes));
+						& mut content_bytes));
 
-				// store header and content
-
-				work.blocks.push (
-					WorkBlock::Metadata {
-						header: header_bytes,
-						content: content_bytes,
-					}
-				);
+				deferred.push (
+					try! (
+						packer.defer (
+							content_bytes)));
 
 			},
 
@@ -156,111 +129,64 @@ pub fn write_contents (
 
 	}
 
-	Ok (work)
+	// write deferred
 
-}
+	try! (
+		packer.align ());
 
-pub fn write_headers (
-	output: &mut Write,
-	offset: &mut u64,
-	work: & Work,
-) -> Result <Vec <wbspack::BlockReference>, TfError> {
+	for one_deferred in deferred.iter () {
 
-	let mut all_blocks: Vec <wbspack::BlockReference> =
-		Vec::with_capacity (
-			work.blocks.len () * 2);
-
-	// write headers
-
-	for block in work.blocks.iter () {
-
-		match block {
-
-			& WorkBlock::Content {
-				header,
-				reference,
-			} => {
-
-				try! (
-					output.write (
-						& header));
-
-				all_blocks.push (
-					wbspack::BlockReference {
-						offset: * offset,
-						size: 512,
-					}
-				);
-
-				all_blocks.push (
-					reference);
-
-				* offset += 512;
-
-			},
-
-			& WorkBlock::Metadata {
-				header,
-				ref content,
-			} => {
-
-				try! (
-					output.write (
-						& header));
-
-				all_blocks.push (
-					wbspack::BlockReference {
-						offset: * offset,
-						size: 512,
-					}
-				);
-
-				* offset += 512;
-
-				try! (
-					output.write (
-						& content));
-
-				all_blocks.push (
-					wbspack::BlockReference {
-						offset: * offset,
-						size: content.len () as u64,
-					}
-				);
-
-				* offset +=
-					content.len () as u64;
-
-			}
-
-		}
+		try! (
+			packer.write_deferred (
+				one_deferred));
 
 	}
 
 	// write nulls
 
+	if null_count < 2 {
+		panic! ();
+	}
+
 	let null_bytes: [u8; 512] =
 		[0; 512];
 
-	for _null_count in 0 .. work.null_count {
+	for _null_count in 0 .. null_count {
 
 		try! (
-			output.write (
+			packer.write (
 				& null_bytes));
 
 	}
 
-	all_blocks.push (
-		wbspack::BlockReference {
-			offset: * offset,
-			size: work.null_count * 512,
-		}
-	);
+	Ok (())
 
-	* offset += work.null_count * 512;
+}
 
-	// return
+fn read_header (
+	input: & mut Read,
+) -> Result <Option <Vec <u8>>, TfError> {
 
-	Ok (all_blocks)
+	let mut header_bytes =
+		Vec::with_capacity (
+			512);
+
+	unsafe {
+		header_bytes.set_len (
+			512);
+	}
+
+	match try! (
+		input.read (
+			& mut header_bytes)) {
+
+		0 => Ok (None),
+		512 => Ok (Some (header_bytes)),
+
+		bytes_read => panic! (
+			"Read {} bytes, expected EOF or 512",
+			bytes_read),
+
+	}
 
 }

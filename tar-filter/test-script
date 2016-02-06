@@ -1,0 +1,99 @@
+#!/bin/bash
+
+set -euf -o pipefail
+
+source "$1"
+
+tmp="tmp"
+
+control_target="$tmp/control"
+filter_target="$tmp/filter"
+align_target="$tmp/align"
+
+mkdir -p "$tmp"
+
+zbackup --non-encrypted init "$control_target" || true
+zbackup --non-encrypted init "$filter_target" || true
+zbackup --non-encrypted init "$align_target" || true
+
+for container in "${containers[@]}"; do
+for date in "${dates[@]}"; do
+
+	if test -f "$control_target/backups/$container-$date" \
+		-a -f "$filter_target/backups/$container-$date" \
+		-a -f "$align_target/backups/$container-$date"
+	then
+		continue
+	fi
+
+	echo ""
+	echo "========== $container $date =========="
+	echo ""
+
+	source="$backup_source/backups/$container-$date"
+
+	echo "$(date) Extracting"
+
+	zbackup \
+		--non-encrypted \
+		restore \
+		--silent \
+		"$source" \
+		> "$tmp/data"
+
+	if ! test -f "$control_target/backups/$container-$date"; then
+
+		echo "$(date) Creating control"
+
+		zbackup \
+			--non-encrypted \
+			backup \
+			--silent \
+			"$control_target/backups/$container-$date" \
+			< "$tmp/data"
+
+	fi
+
+	if ! test -f "$filter_target/backups/$container-$date"; then
+
+		echo "$(date) Creating filter"
+
+		target/release/tar-filter \
+			pack \
+			< "$tmp/data" \
+		| zbackup \
+			--non-encrypted \
+			backup \
+			--silent \
+			"$filter_target/backups/$container-$date"
+
+	fi
+
+	if ! test -f "$align_target/backups/$container-$date"; then
+
+		echo "$(date) Creating align"
+
+		target/release/tar-filter \
+			packalign \
+			< "$tmp/data" \
+		| zbackup \
+			--non-encrypted \
+			backup \
+			--silent \
+			"$align_target/backups/$container-$date"
+
+	fi
+
+	rm "$tmp/data"
+
+	echo ""
+
+	du \
+		--human-readable \
+		--max-depth=1 \
+		"$tmp"
+
+done
+done
+
+# ex: noet ts=4 filetype=bash

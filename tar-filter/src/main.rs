@@ -19,7 +19,9 @@ mod tarpack;
 mod wbspack;
 mod zbackup;
 
-fn pack () -> Result <(), TfError> {
+fn pack (
+	alignment: u64,
+) -> Result <(), TfError> {
 
 	let mut stdin =
 		io::stdin ();
@@ -27,33 +29,23 @@ fn pack () -> Result <(), TfError> {
 	let mut stdout =
 		io::stdout ();
 
-	let mut offset = 0;
-
-	try! {
-		wbspack::write_header (
-			&mut stdout,
-			&mut offset)
-	};
-
-	let headers_and_content_blocks =
+	let mut packer =
 		try! (
-			tarpack::write_contents (
-				&mut stdin,
-				&mut stdout,
-				&mut offset));
-
-	let all_blocks =
-		try! (
-			tarpack::write_headers (
-				&mut stdout,
-				&mut offset,
-				&    headers_and_content_blocks));
+			wbspack::Packer::new (
+				& mut stdout,
+				0,
+				alignment));
 
 	try! (
-		wbspack::write_footer (
-			&mut stdout,
-			&mut offset,
-			&    all_blocks));
+		packer.write_header ());
+
+	try! (
+		tarpack::pack (
+			& mut stdin,
+			& mut packer));
+
+	try! (
+		packer.write_footer ());
 
 	Ok (())
 
@@ -201,12 +193,42 @@ fn main () {
 
 		}
 
-		match pack () {
+		match pack (
+			0x1,
+		) {
 
 			Ok (()) => {
 
+				process::exit (0)
+
+			},
+
+			Err (error) => {
+
 				stderrln! (
-					"All done!");
+					"Error: {}",
+					error);
+
+				process::exit (1)
+
+			},
+
+		}
+
+	} else if arguments [0] == "packalign" {
+
+		if arguments.len () != 1 {
+
+			stderrln! (
+				"Usage error");
+
+		}
+
+		match pack (
+			0x10000,
+		) {
+
+			Ok (()) => {
 
 				process::exit (0)
 
@@ -237,9 +259,6 @@ fn main () {
 
 			Ok (()) => {
 
-				stderrln! (
-					"All done!");
-
 				process::exit (0)
 
 			},
@@ -268,9 +287,6 @@ fn main () {
 		match zunpack (& arguments [1]) {
 
 			Ok (()) => {
-
-				stderrln! (
-					"All done!");
 
 				process::exit (0)
 
@@ -303,9 +319,6 @@ fn main () {
 
 			Ok (()) => {
 
-				stderrln! (
-					"All done!");
-
 				process::exit (0)
 
 			},
@@ -336,9 +349,6 @@ fn main () {
 		) {
 
 			Ok (()) => {
-
-				stderrln! (
-					"All done!");
 
 				process::exit (0)
 

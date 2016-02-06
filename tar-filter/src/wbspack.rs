@@ -16,28 +16,244 @@ pub struct BlockReference {
 
 }
 
-pub fn write_header (
-	output: & mut Write,
-	offset: & mut u64,
-) -> Result <(), TfError> {
+pub struct Packer <'a> {
 
-	for header_line in [
-		b"WBS PACK\0\0\0\0\0\0\0\0",
-		b"HEADER START\0\0\0\0",
-		b"VERSION 0\0\0\0\0\0\0\0",
-		b"TARPACK 0\0\0\0\0\0\0\0",
-		b"HEADER END\0\0\0\0\0\0",
-	].iter () {
+	output: & 'a mut Write,
+	offset: u64,
+	alignment: u64,
 
-		try! (
-			output.write (
-				* header_line));
+	block_references: Vec <BlockReference>,
 
-		* offset += 16;
+}
+
+pub struct Deferred {
+
+	content: Vec <u8>,
+	index: u64,
+
+}
+
+impl <'a> Packer <'a> {
+
+	pub fn new (
+		output: & 'a mut Write,
+		offset: u64,
+		alignment: u64,
+	) -> Result <Packer <'a>, TfError> {
+
+		Ok (Packer {
+
+			output: output,
+			offset: offset,
+			alignment: alignment,
+
+			block_references: vec! (),
+
+		})
 
 	}
 
-	Ok (())
+	pub fn write (
+		& mut self,
+		data: & [u8],
+	) -> Result <(), TfError> {
+
+		try! (
+			self.output.write (
+				data));
+
+		self.block_references.push (
+			BlockReference {
+				offset: self.offset,
+				size: data.len () as u64,
+			});
+
+		self.offset +=
+			data.len () as u64;
+
+		Ok (())
+
+	}
+
+	pub fn defer (
+		& mut self,
+		content: Vec <u8>,
+	) -> Result <Deferred, TfError> {
+
+		let deferred =
+			Deferred {
+				content: content,
+				index: self.block_references.len () as u64,
+			};
+
+		self.block_references.push (
+			BlockReference {
+				offset: 0,
+				size: 0,
+			});
+
+		Ok (deferred)
+
+	}
+
+	pub fn write_deferred (
+		& mut self,
+		deferred: & Deferred,
+	) -> Result <(), TfError> {
+
+		try! (
+			self.output.write (
+				& deferred.content));
+
+		self.block_references [deferred.index as usize] =
+			BlockReference {
+				offset: self.offset,
+				size: deferred.content.len () as u64,
+			};
+
+		self.offset +=
+			deferred.content.len () as u64;
+
+		Ok (())
+
+	}
+
+	pub fn align (
+		& mut self,
+	) -> Result <(), TfError> {
+
+		let remainder =
+			self.offset % self.alignment;
+
+		let padding =
+			self.alignment - remainder;
+
+		if remainder != 0 {
+
+			let zeroes: Vec <u8> =
+				vec! [0; padding as usize];
+
+			try! (
+				self.output.write (
+					& zeroes));
+
+			self.offset +=
+				padding;
+
+		}
+
+		Ok (())
+
+	}
+
+	pub fn write_header (
+		& mut self,
+	) -> Result <(), TfError> {
+
+		for header_line in [
+			b"WBS PACK\0\0\0\0\0\0\0\0",
+			b"HEADER START\0\0\0\0",
+			b"VERSION 0\0\0\0\0\0\0\0",
+			b"TARPACK 0\0\0\0\0\0\0\0",
+			b"HEADER END\0\0\0\0\0\0",
+		].iter () {
+
+			try! (
+				self.output.write (
+					* header_line));
+
+			self.offset += 16;
+
+		}
+
+		Ok (())
+
+	}
+
+	pub fn write_footer (
+		& mut self,
+	) -> Result <(), TfError> {
+
+		try! (
+			self.align ());
+
+		let blocks_offset =
+			self.offset;
+
+		// write blocks
+
+		try! (
+			self.output.write (
+				b"BLOCKS START\0\0\0\0"));
+
+		self.offset += 16;
+
+		for block_reference in self.block_references.iter () {
+
+			let binary_block_reference: & [u8; 16] =
+				unsafe {
+					mem::transmute::<& BlockReference, & [u8; 16]> (
+						block_reference)
+				};
+
+			try! (
+				self.output.write (
+					binary_block_reference));
+
+			self.offset +=
+				512;
+
+		}
+
+		try! (
+			self.output.write (
+				b"BLOCKS END\0\0\0\0\0\0"));
+
+		self.offset += 16;
+
+		// write blocks offset
+
+		let binary_blocks_offset: & [u8; 8] = unsafe {
+			mem::transmute::<& u64, & [u8; 8]> (
+				& blocks_offset)
+		};
+
+		try! (
+			self.output.write (
+				binary_blocks_offset));
+
+		self.offset += 8;
+
+		// write blocks length
+
+		let blocks_length: u64 =
+			self.block_references.len () as u64;
+
+		let binary_blocks_length: & [u8; 8] = unsafe {
+			mem::transmute::<& u64, & [u8; 8]> (
+				& blocks_length)
+		};
+
+		try! (
+			self.output.write (
+				binary_blocks_length));
+
+		self.offset += 8;
+
+		// write end
+
+		try! (
+			self.align ());
+
+		try! (
+			self.output.write (
+				b"WBS PACK END\0\0\0\0"));
+
+		self.offset += 8;
+
+		Ok (())
+
+	}
 
 }
 
@@ -113,83 +329,6 @@ pub fn read_header (
 		});
 
 	}
-
-	Ok (())
-
-}
-
-pub fn write_footer (
-	output: & mut Write,
-	offset: & mut u64,
-	block_references: & Vec <BlockReference>,
-) -> Result <(), TfError> {
-
-	let blocks_offset =
-		* offset;
-
-	// write blocks
-
-	try! (
-		output.write (
-			b"BLOCKS START\0\0\0\0"));
-
-	* offset += 16;
-
-	for block_reference in block_references {
-
-		let binary_block_reference: & [u8; 16] = unsafe {
-			mem::transmute::<& BlockReference, & [u8; 16]> (
-				block_reference)
-		};
-
-		try! (
-			output.write (
-				binary_block_reference));
-
-		* offset += 16;
-
-	}
-
-	try! (
-		output.write (
-			b"BLOCKS END\0\0\0\0\0\0"));
-
-	* offset += 16;
-
-	// write blocks offset
-
-	let binary_blocks_offset: & [u8; 8] = unsafe {
-		mem::transmute::<& u64, & [u8; 8]> (
-			& blocks_offset)
-	};
-
-	try! (
-		output.write (
-			binary_blocks_offset));
-
-	* offset += 8;
-
-	// write blocks length
-
-	let blocks_length: u64 =
-		block_references.len () as u64;
-
-	let binary_blocks_length: & [u8; 8] = unsafe {
-		mem::transmute::<& u64, & [u8; 8]> (
-			& blocks_length)
-	};
-
-	try! (
-		output.write (
-			binary_blocks_length));
-
-	* offset += 8;
-
-	// write end
-
-	try! (
-		output.write (
-			b"WBS PACK END\0\0\0\0"));
 
 	Ok (())
 

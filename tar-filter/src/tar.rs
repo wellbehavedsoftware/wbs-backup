@@ -80,11 +80,18 @@ pub enum Type {
 impl Header {
 
 	pub fn read (
-		header_bytes: & [u8; 512],
+		header_bytes: & [u8],
 	) -> Result <Header, TfError> {
 
-		let binary_header: BinaryHeader =
-			unsafe { mem::transmute (* header_bytes) };
+		if header_bytes.len () != 512 {
+			panic! ();
+		}
+
+		let binary_header =
+			unsafe {
+				mem::transmute::<& u8, & BinaryHeader> (
+					& header_bytes [0])
+			};
 
 		if binary_header.magic != * b"ustar " {
 
