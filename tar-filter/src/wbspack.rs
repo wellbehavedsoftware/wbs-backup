@@ -243,9 +243,6 @@ impl <'a> Packer <'a> {
 		// write end
 
 		try! (
-			self.align ());
-
-		try! (
 			self.output.write (
 				b"WBS PACK END\0\0\0\0"));
 

@@ -6,27 +6,54 @@ use misc::*;
 use tar;
 use wbspack;
 
+struct TarPacker <'a, 'b: 'a> {
+	input: & 'a mut Read,
+	packer: & 'a mut wbspack::Packer <'b>,
+	deferred: Vec <wbspack::Deferred>,
+	null_count: u64,
+}
+
 pub fn pack (
 	input: & mut Read,
 	packer: & mut wbspack::Packer,
 ) -> Result <(), TfError> {
 
-	let mut null_count: u64 =
-		0;
+	let mut tar_packer =
+		TarPacker {
+			input: input,
+			packer: packer,
+			deferred: vec! (),
+			null_count: 0,
+		};
 
-	let mut deferred: Vec <wbspack::Deferred> =
-		vec! ();
+	while try! (
+		tar_packer.process_one_entry ()) {
 
-	loop {
+	}
+
+	try! (
+		tar_packer.write_deferred ());
+
+	try! (
+		tar_packer.write_nulls ());
+
+	Ok (())
+
+}
+
+impl <'a, 'b> TarPacker <'a, 'b> {
+
+	pub fn process_one_entry (
+		& mut self,
+	) -> Result <bool, TfError> {
 
 		let header_bytes =
 			match try! (
-				read_header (
-					input)) {
+				self.read_header ()) {
 
 			Some (bytes) => bytes,
 
-			None => break,
+			None => return Ok (false),
 
 		};
 
@@ -34,13 +61,13 @@ pub fn pack (
 
 		if header_bytes [0 .. 512].as_ref () == [0; 512].as_ref () {
 
-			null_count += 1;
+			self.null_count += 1;
 
-			continue;
+			return Ok (true);
 
 		}
 
-		if null_count > 0 {
+		if self.null_count > 0 {
 
 			panic! (
 				"NUL in middle of archive");
@@ -48,6 +75,47 @@ pub fn pack (
 		}
 
 		// interpret header
+
+		try! (
+			self.interpret_header (
+				header_bytes));
+
+		Ok (true)
+
+	}
+
+	fn read_header (
+		& mut self
+	) -> Result <Option <Vec <u8>>, TfError> {
+
+		let mut header_bytes =
+			Vec::with_capacity (
+				512);
+
+		unsafe {
+			header_bytes.set_len (
+				512);
+		}
+
+		match try! (
+			self.input.read (
+				& mut header_bytes)) {
+
+			0 => Ok (None),
+			512 => Ok (Some (header_bytes)),
+
+			bytes_read => panic! (
+				"Read {} bytes, expected EOF or 512",
+				bytes_read),
+
+		}
+
+	}
+
+	fn interpret_header (
+		& mut self,
+		header_bytes: Vec <u8>,
+	) -> Result <(), TfError> {
 
 		let header = try! (
 			tar::Header::read (
@@ -70,25 +138,25 @@ pub fn pack (
 
 				// defer header
 
-				deferred.push (
+				self.deferred.push (
 					try! (
-						packer.defer (
+						self.packer.defer (
 							header_bytes)));
 
 				// copy file
 
 				try! (
-					packer.align ());
+					self.packer.align ());
 
 				let mut content_bytes: Vec <u8> =
 					vec! [0; 512 * blocks as usize];
 
 				try! (
-					input.read_exact (
+					self.input.read_exact (
 						& mut content_bytes));
 
 				try! (
-					packer.write (
+					self.packer.write (
 						& content_bytes));
 
 			},
@@ -98,9 +166,9 @@ pub fn pack (
 
 				// defer header
 
-				deferred.push (
+				self.deferred.push (
 					try! (
-						packer.defer (
+						self.packer.defer (
 							header_bytes)));
 
 				// defer content
@@ -115,77 +183,61 @@ pub fn pack (
 				}
 
 				try! (
-					input.read_exact (
+					self.input.read_exact (
 						& mut content_bytes));
 
-				deferred.push (
+				self.deferred.push (
 					try! (
-						packer.defer (
+						self.packer.defer (
 							content_bytes)));
 
 			},
 
 		}
 
+		Ok (())
+
 	}
 
-	// write deferred
-
-	try! (
-		packer.align ());
-
-	for one_deferred in deferred.iter () {
+	fn write_deferred (
+		& mut self,
+	) -> Result <(), TfError> {
 
 		try! (
-			packer.write_deferred (
-				one_deferred));
+			self.packer.align ());
+
+		for one_deferred in self.deferred.iter () {
+
+			try! (
+				self.packer.write_deferred (
+					one_deferred));
+
+		}
+
+		Ok (())
 
 	}
 
-	// write nulls
+	fn write_nulls (
+		& mut self,
+	) -> Result <(), TfError> {
 
-	if null_count < 2 {
-		panic! ();
-	}
+		if self.null_count < 2 {
+			panic! ();
+		}
 
-	let null_bytes: [u8; 512] =
-		[0; 512];
+		let null_bytes: [u8; 512] =
+			[0; 512];
 
-	for _null_count in 0 .. null_count {
+		for _null_count in 0 .. self.null_count {
 
-		try! (
-			packer.write (
-				& null_bytes));
+			try! (
+				self.packer.write (
+					& null_bytes));
 
-	}
+		}
 
-	Ok (())
-
-}
-
-fn read_header (
-	input: & mut Read,
-) -> Result <Option <Vec <u8>>, TfError> {
-
-	let mut header_bytes =
-		Vec::with_capacity (
-			512);
-
-	unsafe {
-		header_bytes.set_len (
-			512);
-	}
-
-	match try! (
-		input.read (
-			& mut header_bytes)) {
-
-		0 => Ok (None),
-		512 => Ok (Some (header_bytes)),
-
-		bytes_read => panic! (
-			"Read {} bytes, expected EOF or 512",
-			bytes_read),
+		Ok (())
 
 	}
 
