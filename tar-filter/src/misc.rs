@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 use std::io;
+use std::num::ParseIntError;
+use std::string::FromUtf8Error;
 
 use protobuf;
 
@@ -115,6 +117,26 @@ impl From <protobuf::error::ProtobufError> for TfError {
 impl From <Box <Error>> for TfError {
 
 	fn from (error: Box <Error>) -> TfError {
+		TfError {
+			error_message: error.description ().to_string (),
+		}
+	}
+
+}
+
+impl From <FromUtf8Error> for TfError {
+
+	fn from (error: FromUtf8Error) -> TfError {
+		TfError {
+			error_message: error.description ().to_string (),
+		}
+	}
+
+}
+
+impl From <ParseIntError> for TfError {
+
+	fn from (error: ParseIntError) -> TfError {
 		TfError {
 			error_message: error.description ().to_string (),
 		}

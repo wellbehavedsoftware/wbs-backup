@@ -117,23 +117,29 @@ impl Header {
 				name: tar_string (
 					& binary_header.name),
 
-				mode: tar_number_u32 (
-					& binary_header.mode),
+				mode: try! (
+					tar_number_u32 (
+						& binary_header.mode)),
 
-				uid: tar_number_u32 (
-					& binary_header.uid),
+				uid: try! (
+					tar_number_u32 (
+						& binary_header.uid)),
 
-				gid: tar_number_u32 (
-					& binary_header.gid),
+				gid: try! (
+					tar_number_u32 (
+						& binary_header.gid)),
 
-				size: tar_number_u64 (
-					& binary_header.size),
+				size: try! (
+					tar_number_u64 (
+						& binary_header.size)),
 
-				mtime: tar_number_u64 (
-					& binary_header.mtime),
+				mtime: try! (
+					tar_number_u64 (
+						& binary_header.mtime)),
 
-				cksum: tar_number_u32 (
-					& binary_header.cksum),
+				cksum: try! (
+					tar_number_u32 (
+						& binary_header.cksum)),
 
 				typeflag: tar_type (
 					& binary_header.typeflag),
@@ -147,20 +153,25 @@ impl Header {
 				gname: tar_string (
 					& binary_header.gname),
 
-				dev_major: tar_number_u32 (
-					& binary_header.dev_major),
+				dev_major: try! (
+					tar_number_u32 (
+						& binary_header.dev_major)),
 
-				dev_minor: tar_number_u32 (
-					& binary_header.dev_minor),
+				dev_minor: try! (
+					tar_number_u32 (
+						& binary_header.dev_minor)),
 
-				atime: tar_number_u64 (
-					& binary_header.atime),
+				atime: try! (
+					tar_number_u64 (
+						& binary_header.atime)),
 
-				ctime: tar_number_u64 (
-					& binary_header.ctime),
+				ctime: try! (
+					tar_number_u64 (
+						& binary_header.ctime)),
 
-				offset: tar_number_u64 (
-					& binary_header.offset),
+				offset: try! (
+					tar_number_u64 (
+						& binary_header.offset)),
 
 /*
 				longnames: [u8; 4],
@@ -199,34 +210,65 @@ fn tar_string (
 
 fn tar_number_u64 (
 	slice: & [u8],
-) -> u64 {
+) -> Result <u64, TfError> {
 
 	if slice [0] == 0 {
-		0
+
+		Ok (0)
+
+	} else if slice [0] == 0x80 {
+
+		Ok (unsafe {
+			* mem::transmute::<& u8, & u64> (
+				& slice [4])
+		})
+
+	} else if slice [0] == 0xff {
+
+		panic! ()
+
 	} else {
-		u64::from_str_radix (
-			& String::from_utf8 (
-				tar_string (slice),
-			).unwrap (),
-			8,
-		).unwrap ()
+
+		let string =
+			try! (
+				String::from_utf8 (
+					tar_string (slice)));
+
+		let number =
+			try! (
+				u64::from_str_radix (
+					& string,
+					8));
+
+		Ok (number)
+
 	}
 
 }
 
 fn tar_number_u32 (
 	slice: & [u8],
-) -> u32 {
+) -> Result <u32, TfError> {
 
 	if slice [0] == 0 {
-		0
+
+		Ok (0)
+
 	} else {
-		u32::from_str_radix (
-			& String::from_utf8 (
-				tar_string (slice),
-			).unwrap (),
-			8,
-		).unwrap ()
+
+		let string =
+			try! (
+				String::from_utf8 (
+					tar_string (slice)));
+
+		let number =
+			try! (
+				u32::from_str_radix (
+					& string,
+					8));
+
+		Ok (number)
+
 	}
 
 }
