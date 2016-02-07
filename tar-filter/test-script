@@ -12,87 +12,181 @@ align_target="$tmp/align"
 
 mkdir -p "$tmp"
 
-zbackup --non-encrypted init "$control_target" || true
-zbackup --non-encrypted init "$filter_target" || true
-zbackup --non-encrypted init "$align_target" || true
+test -d "$control_target" || zbackup --non-encrypted init "$control_target"
+test -d "$filter_target" || zbackup --non-encrypted init "$filter_target"
+test -d "$align_target" || zbackup --non-encrypted init "$align_target"
 
-for container in "${containers[@]}"; do
+function lock {
+
+	echo -n $'\n\n\E[31;1m           ·  ·  ·  ·  ·  ·   waiting   ·  ·  ·  ·  ·  ·\n'
+
+	flock --exclusive 200
+
+	echo -n $'\r\E[A\E[2K\E[0m\E[2A'
+
+}
+
+function work {
+
+	echo -n $'\n\n\E[32;1m         \E[5m<<   <<   <<   <<\E[25m    working'
+	echo -n $'    \E[5m>>   >>   >>   >>\E[25m\n'
+
+	sleep 1
+
+}
+
+function unwork {
+
+	sleep 1
+
+	echo -n $'\r\E[A\E[2K\E[0m\E[3A\E['"$1"$'C\E[32;1m✓\E[0m\n'
+
+}
+
+for reorder in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+for backup in "${backups[@]}"; do
 for date in "${dates[@]}"; do
 
-	if test -f "$control_target/backups/$container-$date" \
-		-a -f "$filter_target/backups/$container-$date" \
-		-a -f "$align_target/backups/$container-$date"
+	backup_hash="$( sha1sum <<<"$backup-$date" )"
+	backup_hash_1="${backup_hash:0:1}"
+	backup_hash_2="${backup_hash:1:1}"
+
+	if ! test -f "$backup-$date"; then
+		continue
+	fi
+
+	if test "$backup_hash_2" != "$reorder"; then
+
+		continue
+	fi
+
+	if test "$backup_hash_1" != "$2" \
+		-a "$backup_hash_1" != "$3"
 	then
 		continue
 	fi
 
-	echo ""
-	echo "========== $container $date =========="
-	echo ""
+	backup_basename="$( basename "$backup" )"
 
-	source="$backup_source/backups/$container-$date"
+	if test -f "$control_target/backups/$backup_basename-$date" \
+		-a -f "$filter_target/backups/$backup_basename-$date" \
+		-a -f "$align_target/backups/$backup_basename-$date"
+	then
+		continue
+	fi
 
-	echo "$(date) Extracting"
+	echo -n $'\Ec\n\E[33;1m ================================================='
+	echo -n $'====================\r======  '"$backup_basename $date"$'  \n\n'
 
+	echo $'\E[34;1m'"$(date) Extracting"$'\E[0m'
+
+	work
+
+	nice \
+	ionice -c 3 \
 	zbackup \
 		--non-encrypted \
 		restore \
 		--silent \
-		"$source" \
-		> "$tmp/data"
+		--cache-size "${cache_size}MB" \
+		"$backup-$date" \
+		> "$tmp/$$"
 
-	if ! test -f "$control_target/backups/$container-$date"; then
+	unwork 40
 
-		echo "$(date) Creating control"
+	if ! test -f "$control_target/backups/$backup_basename-$date"; then
 
-		zbackup \
-			--non-encrypted \
-			backup \
-			--silent \
-			"$control_target/backups/$container-$date" \
-			< "$tmp/data"
+		(
 
-	fi
+			lock
 
-	if ! test -f "$filter_target/backups/$container-$date"; then
+			echo $'\E[36;1m'"$(date) Creating control"$'\E[0m'
 
-		echo "$(date) Creating filter"
+			work
 
-		target/release/tar-filter \
-			pack \
-			< "$tmp/data" \
-		| zbackup \
-			--non-encrypted \
-			backup \
-			--silent \
-			"$filter_target/backups/$container-$date"
+			rm -rf "$control_target/tmp"
 
-	fi
+			zbackup \
+				--non-encrypted \
+				backup \
+				--silent \
+				--cache-size "${cache_size}MB" \
+				--threads "$threads" \
+				"$control_target/backups/$backup_basename-$date" \
+				< "$tmp/$$" \
+				2> /dev/null
 
-	if ! test -f "$align_target/backups/$container-$date"; then
+			unwork 46
 
-		echo "$(date) Creating align"
-
-		target/release/tar-filter \
-			packalign \
-			< "$tmp/data" \
-		| zbackup \
-			--non-encrypted \
-			backup \
-			--silent \
-			"$align_target/backups/$container-$date"
+		) 200>"$tmp/lock-control"
 
 	fi
 
-	rm "$tmp/data"
+	if ! test -f "$filter_target/backups/$backup_basename-$date"; then
 
-	echo ""
+		(
 
-	du \
-		--human-readable \
-		--max-depth=1 \
-		"$tmp"
+			lock
 
+			echo $'\E[36;1m'"$(date) Creating filter"$'\E[0m'
+
+			work 
+
+			rm -rf "$filter_target/tmp"
+
+			target/release/tar-filter \
+				pack \
+				< "$tmp/$$" \
+			| zbackup \
+				--non-encrypted \
+				backup \
+				--silent \
+				--cache-size "${cache_size}MB" \
+				--threads "$threads" \
+				"$filter_target/backups/$backup_basename-$date" \
+				2> /dev/null
+
+			unwork 45
+
+		) 200>"$tmp/lock-filter"
+
+	fi
+
+	if ! test -f "$align_target/backups/$backup_basename-$date"; then
+
+		(
+
+			lock
+
+			echo $'\E[36;1m'"$(date) Creating align"$'\E[0m'
+
+			work
+
+			rm -rf "$align_target/tmp"
+
+			target/release/tar-filter \
+				packalign \
+				< "$tmp/$$" \
+			| zbackup \
+				--non-encrypted \
+				backup \
+				--silent \
+				--cache-size "${cache_size}MB" \
+				--threads "$threads" \
+				"$align_target/backups/$backup_basename-$date" \
+				2> /dev/null
+
+			unwork 44
+
+		) 200>"$tmp/lock-align"
+
+	fi
+
+	rm "$tmp/$$"
+
+	exec "$0" "$@"
+
+done
 done
 done
 
