@@ -1,5 +1,3 @@
-/etc/zbackup-proto.proto
-/src/zbackup/proto.rs
 /target
 /test-config
 

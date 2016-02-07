@@ -61,7 +61,9 @@ for date in "${dates[@]}"; do
 	fi
 
 	if test "$backup_hash_1" != "$2" \
-		-a "$backup_hash_1" != "$3"
+		-a "$backup_hash_1" != "$3" \
+		-a "$backup_hash_1" != "$4" \
+		-a "$backup_hash_1" != "$5"
 	then
 		continue
 	fi
