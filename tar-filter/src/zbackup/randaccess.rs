@@ -3,19 +3,24 @@ use protobuf::stream::CodedInputStream;
 
 use rustc_serialize::hex::ToHex;
 
+use std::cmp;
 use std::io;
 use std::io::Cursor;
+use std::rc::Rc;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::io::Write;
 
 use misc::*;
 use zbackup::proto;
 use zbackup::repo::ZBackup;
 
 enum InstructionRefContent {
+
 	Chunk ([u8; 24]),
-	Bytes (Vec <u8>),
+	Bytes (Rc <Vec <u8>>),
+
 }
 
 struct InstructionRef {
@@ -34,7 +39,8 @@ pub struct RandomAccess <'a> {
 	size: u64,
 
 	position: u64,
-	chunk_cursor: Cursor <Vec <u8>>,
+	chunk_bytes: Rc <Vec <u8>>,
+	chunk_position: u64,
 
 }
 
@@ -124,7 +130,8 @@ impl <'a> RandomAccess <'a> {
 
 					content:
 						InstructionRefContent::Bytes (
-							bytes.to_owned ()),
+							Rc::new (
+								bytes.to_owned ())),
 
 					start:
 						offset,
@@ -148,7 +155,8 @@ impl <'a> RandomAccess <'a> {
 			size: offset,
 
 			position: 0,
-			chunk_cursor: Cursor::new (vec! []),
+			chunk_bytes: Rc::new (vec! ()),
+			chunk_position: 0,
 
 		})
 
@@ -168,12 +176,36 @@ impl <'a> Read for RandomAccess <'a> {
 		loop {
 
 			let loop_bytes_read: u64 =
+				cmp::min (
+					self.chunk_bytes.len () as u64
+						- self.chunk_position,
+					buffer.len () as u64
+						- function_bytes_read);
+
+			{
+
+				let source =
+					& self.chunk_bytes [
+						self.chunk_position as usize ..
+						self.chunk_position as usize
+							+ loop_bytes_read as usize];
+
+				let mut target =
+					& mut buffer [
+						function_bytes_read as usize ..
+						function_bytes_read as usize
+							+ loop_bytes_read as usize];
+
 				try! (
-					self.chunk_cursor.read (
-						& mut buffer [ function_bytes_read as usize .. ])
-				) as u64;
+					target.write_all (
+						source));
+
+			}
 
 			self.position +=
+				loop_bytes_read;
+
+			self.chunk_position +=
 				loop_bytes_read;
 
 			function_bytes_read +=
@@ -185,47 +217,66 @@ impl <'a> Read for RandomAccess <'a> {
 
 			}
 
-			match self.instruction_refs.iter ().find (
-				|instruction_ref|
-				instruction_ref.start >= self.position
-				&& self.position < instruction_ref.end,
+			let position_temp =
+				self.position;
+
+			let instruction_ref_index =
+				match self.instruction_refs.binary_search_by (
+
+				|probe|
+
+				if position_temp < probe.start {
+					cmp::Ordering::Greater
+				} else if probe.end <= position_temp {
+					cmp::Ordering::Less
+				} else {
+					cmp::Ordering::Equal
+				}
+
 			) {
 
-				Some (instruction_ref) => match instruction_ref.content {
+				Ok (value) =>
+					value,
 
-					InstructionRefContent::Chunk (chunk_id) => {
+				Err (_) =>
+					break,
 
-						let chunk_bytes =
-							try! (
-								self.repo.get_chunk (
-									chunk_id,
-								).map_err (
-									|_error|
-									io::Error::new (
-										io::ErrorKind::InvalidData,
-										format! (
-											"Chunk not found: {}",
-											chunk_id.to_hex ()))
-								));
+			};
 
-						self.chunk_cursor =
-							Cursor::new (
-								chunk_bytes.to_owned ());
+			let instruction_ref =
+				& mut self.instruction_refs [
+					instruction_ref_index];
 
-					},
+			match instruction_ref.content {
 
-					InstructionRefContent::Bytes (ref bytes_data) => {
+				InstructionRefContent::Chunk (ref chunk_id) => {
 
-						self.chunk_cursor =
-							Cursor::new (
-								bytes_data.to_owned ());
+					self.chunk_bytes =
+						try! (
+							self.repo.get_chunk (
+								* chunk_id,
+							).map_err (
+								|_error|
+								io::Error::new (
+									io::ErrorKind::InvalidData,
+									format! (
+										"Chunk not found: {}",
+										chunk_id.to_hex ()))
+							));
 
-					},
+					self.chunk_position =
+						0;
 
 				},
 
-				None => {
-					break;
+				InstructionRefContent::Bytes (ref mut bytes_data) => {
+
+					self.chunk_bytes =
+						bytes_data.clone ();
+
+					self.chunk_position =
+						0;
+
 				},
 
 			}
@@ -260,64 +311,77 @@ impl <'a> Seek for RandomAccess <'a> {
 
 		};
 
-		match self.instruction_refs.iter ().find (
-			|instruction_ref|
-			instruction_ref.start <= self.position
-			&& self.position < instruction_ref.end,
+		let position_temp =
+			self.position;
+
+		match self.instruction_refs.binary_search_by (
+
+			|probe|
+
+			if position_temp < probe.start {
+				cmp::Ordering::Greater
+			} else if probe.end <= position_temp {
+				cmp::Ordering::Less
+			} else {
+				cmp::Ordering::Equal
+			}
+
 		) {
 
-			Some (instruction_ref) => match instruction_ref.content {
+			Ok (instruction_ref_index) => {
 
-				InstructionRefContent::Chunk (chunk_id) => {
+				let instruction_ref =
+					& self.instruction_refs [
+						instruction_ref_index];
 
-					let chunk_bytes =
-						try! (
-							self.repo.get_chunk (
-								chunk_id,
-							).map_err (
-								|_error|
-								io::Error::new (
-									io::ErrorKind::InvalidData,
-									format! (
-										"Chunk not found: {}",
-										chunk_id.to_hex ()))
-							));
+				match instruction_ref.content {
 
-					self.chunk_cursor =
-						Cursor::new (
-							chunk_bytes.to_owned ());
+					InstructionRefContent::Chunk (ref chunk_id) => {
 
-					try! (
-						self.chunk_cursor.seek (
-							SeekFrom::Start (
-								self.position - instruction_ref.start)));
+						self.chunk_bytes =
+							try! (
+								self.repo.get_chunk (
+									* chunk_id,
+								).map_err (
+									|_error|
+									io::Error::new (
+										io::ErrorKind::InvalidData,
+										format! (
+											"Chunk not found: {}",
+											chunk_id.to_hex ()))
+								));
 
-				},
+						self.chunk_position =
+							self.position - instruction_ref.start;
 
-				InstructionRefContent::Bytes (ref bytes_data) => {
+					},
 
-					self.chunk_cursor =
-						Cursor::new (
-							bytes_data.to_owned ());
+					InstructionRefContent::Bytes (ref bytes_data) => {
 
-					try! (
-						self.chunk_cursor.seek (
-							SeekFrom::Start (
-								self.position - instruction_ref.start)));
+						self.chunk_bytes =
+							bytes_data.clone ();
 
-				},
+						self.chunk_position =
+							self.position - instruction_ref.start;
 
-			},
+					},
 
-			None => {
-
-
-				self.chunk_cursor =
-					Cursor::new (vec! []);
+				};
 
 			},
 
-		}
+			Err (_) => {
+
+				self.chunk_bytes =
+					Rc::new (
+						vec! ());
+
+				self.chunk_position =
+					0;
+
+			},
+
+		};
 
 		Ok (self.position)
 

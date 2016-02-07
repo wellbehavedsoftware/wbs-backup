@@ -65,8 +65,8 @@ fn unpack (
 
 	try! (
 		wbspack::unpack (
-			&mut input,
-			&mut stdout));
+			& mut input,
+			& mut stdout));
 
 	Ok (())
 
@@ -103,8 +103,8 @@ fn zunpack (
 
 	try! (
 		wbspack::unpack (
-			&mut input,
-			&mut stdout));
+			& mut input,
+			& mut stdout));
 
 	Ok (())
 

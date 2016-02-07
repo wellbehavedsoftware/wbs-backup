@@ -8,11 +8,15 @@ use std::fs;
 use std::io::Cursor;
 use std::io::Read;
 use std::io::Write;
+use std::rc::Rc;
 
 use misc::*;
 use zbackup::*;
 use zbackup::proto;
 use zbackup::read::*;
+
+const CACHE_MAX_SIZE: usize =
+	0x10000;
 
 struct MasterIndexEntry {
 	pub bundle_id: [u8; 24],
@@ -22,7 +26,7 @@ struct MasterIndexEntry {
 pub struct ZBackup {
 	path: String,
 	master_index: HashMap <[u8; 24], MasterIndexEntry>,
-	chunk_cache: HashMap <[u8; 24], Vec <u8>>,
+	chunk_cache: HashMap <[u8; 24], Rc <Vec <u8>>>,
 }
 
 impl ZBackup {
@@ -258,7 +262,7 @@ impl ZBackup {
 
 			try! (
 				output.write (
-					&buffer [0 .. bytes_read ]));
+					& buffer [0 .. bytes_read ]));
 
 		}
 
@@ -354,11 +358,11 @@ impl ZBackup {
 	pub fn get_chunk (
 		& mut self,
 		chunk_id: [u8; 24],
-	) -> Result <& Vec <u8>, TfError> {
+	) -> Result <Rc <Vec <u8>>, TfError> {
 
 		if ! self.chunk_cache.contains_key (& chunk_id) {
 
-			if self.chunk_cache.len () >= 0x1000 {
+			if self.chunk_cache.len () >= CACHE_MAX_SIZE {
 
 				self.chunk_cache.clear ();
 
@@ -382,17 +386,20 @@ impl ZBackup {
 			};
 
 			for (found_chunk_id, found_chunk_data) in try! (
+
 				read_bundle (
 					& format! (
 						"{}/bundles/{}/{}",
 						self.path,
 						& index_entry.bundle_id.to_hex () [0 .. 2],
 						index_entry.bundle_id.to_hex ()))
+
 			) {
 
 				self.chunk_cache.insert (
 					found_chunk_id,
-					found_chunk_data);
+					Rc::new (
+						found_chunk_data));
 
 			}
 
@@ -403,7 +410,8 @@ impl ZBackup {
 				& chunk_id,
 			).unwrap ();
 
-		Ok (chunk_data)
+		Ok (
+			chunk_data.clone ())
 
 	}
 
