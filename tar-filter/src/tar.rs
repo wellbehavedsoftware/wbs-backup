@@ -218,10 +218,12 @@ fn tar_number_u64 (
 
 	} else if slice [0] == 0x80 {
 
-		Ok (unsafe {
-			* mem::transmute::<& u8, & u64> (
-				& slice [4])
-		})
+		Ok (u64::from_be (
+			unsafe {
+				* mem::transmute::<& u8, & u64> (
+					& slice [4])
+			}
+		))
 
 	} else if slice [0] == 0xff {
 
