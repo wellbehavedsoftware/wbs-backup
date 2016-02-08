@@ -36,3 +36,6 @@ can be included directly in this project.
 * Encrypted zbackup restore
 * Verify checksums during zbackup restore
 * Predictable ordering of tar contents
+* Transparently decompress and recompress
+* Nested packing of nested tars
+* Padding for other file types, eg databases
