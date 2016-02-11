@@ -59,7 +59,7 @@ const LZMA_STREAM_END: c_int = 1;
 
 const LZMA_RUN: c_int = 0;
 
-#[link (name = "lzma")]
+#[ link (name = "lzma") ]
 extern {
 
 	fn lzma_code (

@@ -8,7 +8,7 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 
-use lzma;
+use compress::lzma;
 use misc::*;
 use zbackup::data::*;
 use zbackup::proto;

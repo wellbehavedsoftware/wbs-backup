@@ -2,7 +2,9 @@
 
 set -euf -o pipefail
 
-source "$1"
+config="$1"; shift
+
+source "$config"
 
 tmp="tmp"
 
@@ -20,7 +22,7 @@ function lock {
 
 	echo -n $'\n\n\E[31;1m           ·  ·  ·  ·  ·  ·   waiting   ·  ·  ·  ·  ·  ·\n'
 
-	flock --exclusive 200
+	flock --exclusive --wait 30 200
 
 	echo -n $'\r\E[A\E[2K\E[0m\E[2A'
 
@@ -43,42 +45,41 @@ function unwork {
 
 }
 
-for reorder in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+while true; do
+
+for reorder in $(shuf -e {0..9} {a..f}); do
+for divide in $(shuf -e $@); do
 for backup in "${backups[@]}"; do
 for date in "${dates[@]}"; do
 
-	backup_hash="$( sha1sum <<<"$backup-$date" )"
+	backup_long="$backup-$date"
+	backup_short="$( basename "$backup" )-$date"
+
+	backup_hash="$( sha1sum <<<"$backup_short" )"
 	backup_hash_1="${backup_hash:0:1}"
 	backup_hash_2="${backup_hash:1:1}"
 
-	if ! test -f "$backup-$date"; then
+	if ! test -f "$backup_long"; then
+		continue
+	fi
+
+	if test "$backup_hash_1" != "$divide"; then
 		continue
 	fi
 
 	if test "$backup_hash_2" != "$reorder"; then
-
 		continue
 	fi
 
-	if test "$backup_hash_1" != "$2" \
-		-a "$backup_hash_1" != "$3" \
-		-a "$backup_hash_1" != "$4" \
-		-a "$backup_hash_1" != "$5"
-	then
-		continue
-	fi
-
-	backup_basename="$( basename "$backup" )"
-
-	if test -f "$control_target/backups/$backup_basename-$date" \
-		-a -f "$filter_target/backups/$backup_basename-$date" \
-		-a -f "$align_target/backups/$backup_basename-$date"
+	if test -f "$control_target/backups/$backup_short" \
+		-a -f "$filter_target/backups/$backup_short" \
+		-a -f "$align_target/backups/$backup_short"
 	then
 		continue
 	fi
 
 	echo -n $'\Ec\n\E[33;1m ================================================='
-	echo -n $'====================\r======  '"$backup_basename $date"$'  \n\n'
+	echo -n $'====================\r======  '"$backup_short"$'  \n\n'
 
 	echo $'\E[34;1m'"$(date) Extracting"$'\E[0m'
 
@@ -92,104 +93,129 @@ for date in "${dates[@]}"; do
 		--silent \
 		--cache-size "${cache_size}MB" \
 		"$backup-$date" \
-		> "$tmp/$$"
+	| $compress \
+		> "$tmp/$backup_short.$compressed_extension"
 
 	unwork 40
 
-	if ! test -f "$control_target/backups/$backup_basename-$date"; then
+	if ! test -f "$control_target/backups/$backup_short"; then
 
 		(
 
-			lock
+			if lock; then
 
-			echo $'\E[36;1m'"$(date) Creating control"$'\E[0m'
+				echo $'\E[36;1m'"$(date) Creating control"$'\E[0m'
 
-			work
+				work
 
-			rm -rf "$control_target/tmp"
+				rm -rf "$control_target/tmp"
 
-			zbackup \
-				--non-encrypted \
-				backup \
-				--silent \
-				--cache-size "${cache_size}MB" \
-				--threads "$threads" \
-				"$control_target/backups/$backup_basename-$date" \
-				< "$tmp/$$" \
-				2> /dev/null
+				$uncompress \
+					"$tmp/$backup_short.$compressed_extension" \
+				| zbackup \
+					--non-encrypted \
+					backup \
+					--silent \
+					--cache-size "${cache_size}MB" \
+					--threads "$threads" \
+					"$control_target/backups/$backup_short" \
+					2> /dev/null
 
-			unwork 46
+				unwork 46
+
+			else
+
+				echo $'\E[36;1m'"$(date) Skipped control"$'\E[0m'
+
+			fi
 
 		) 200>"$tmp/lock-control"
 
 	fi
 
-	if ! test -f "$filter_target/backups/$backup_basename-$date"; then
+	if ! test -f "$filter_target/backups/$backup_short"; then
 
 		(
 
-			lock
+			if lock; then
 
-			echo $'\E[36;1m'"$(date) Creating filter"$'\E[0m'
+				echo $'\E[36;1m'"$(date) Creating filter"$'\E[0m'
 
-			work 
+				work
 
-			rm -rf "$filter_target/tmp"
+				rm -rf "$filter_target/tmp"
 
-			target/release/tar-filter \
-				pack \
-				< "$tmp/$$" \
-			| zbackup \
-				--non-encrypted \
-				backup \
-				--silent \
-				--cache-size "${cache_size}MB" \
-				--threads "$threads" \
-				"$filter_target/backups/$backup_basename-$date" \
-				2> /dev/null
+				$uncompress \
+					"$tmp/$backup_short.$compressed_extension" \
+				| target/release/tar-filter \
+					pack \
+				| zbackup \
+					--non-encrypted \
+					backup \
+					--silent \
+					--cache-size "${cache_size}MB" \
+					--threads "$threads" \
+					"$filter_target/backups/$backup_short" \
+					2> /dev/null
 
-			unwork 45
+				unwork 45
+
+			else
+
+				echo $'\E[36;1m'"$(date) Skipped filter"$'\E[0m'
+
+			fi
 
 		) 200>"$tmp/lock-filter"
 
 	fi
 
-	if ! test -f "$align_target/backups/$backup_basename-$date"; then
+	if ! test -f "$align_target/backups/$backup_short"; then
 
 		(
 
-			lock
+			if lock; then
 
-			echo $'\E[36;1m'"$(date) Creating align"$'\E[0m'
+				echo $'\E[36;1m'"$(date) Creating align"$'\E[0m'
 
-			work
+				work
 
-			rm -rf "$align_target/tmp"
+				rm -rf "$align_target/tmp"
 
-			target/release/tar-filter \
-				packalign \
-				< "$tmp/$$" \
-			| zbackup \
-				--non-encrypted \
-				backup \
-				--silent \
-				--cache-size "${cache_size}MB" \
-				--threads "$threads" \
-				"$align_target/backups/$backup_basename-$date" \
-				2> /dev/null
+				$uncompress \
+					"$tmp/$backup_short.$compressed_extension" \
+				| target/release/tar-filter \
+					packalign \
+				| zbackup \
+					--non-encrypted \
+					backup \
+					--silent \
+					--cache-size "${cache_size}MB" \
+					--threads "$threads" \
+					"$align_target/backups/$backup_short" \
+					2> /dev/null
 
-			unwork 44
+				unwork 44
+
+			else
+
+				echo $'\E[36;1m'"$(date) Skipped align"$'\E[0m'
+
+			fi
 
 		) 200>"$tmp/lock-align"
 
+
 	fi
-
-	rm "$tmp/$$"
-
-	exec "$0" "$@"
+	rm "$tmp/$backup_short.$compressed_extension"
 
 done
 done
+done
+done
+date
+
+sleep 60
 done
 
 # ex: noet ts=4 filetype=bash

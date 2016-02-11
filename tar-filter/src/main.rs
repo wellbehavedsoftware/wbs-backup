@@ -13,7 +13,7 @@ use zbackup::ZBackup;
 #[ macro_use ]
 mod misc;
 
-mod lzma;
+mod compress;
 mod tar;
 mod tarpack;
 mod wbspack;

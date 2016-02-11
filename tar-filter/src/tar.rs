@@ -47,6 +47,7 @@ pub struct Header {
 	pub uid: u32,
 	pub gid: u32,
 	pub size: u64,
+	pub blocks: u64,
 	pub mtime: u64,
 	pub cksum: u32,
 	pub typeflag: Type,
@@ -112,6 +113,11 @@ impl Header {
 
 	 	} else {
 
+			let size =
+				try! (
+					tar_number_u64 (
+						& binary_header.size));
+
 			Ok (Header {
 
 				name: tar_string (
@@ -129,9 +135,12 @@ impl Header {
 					tar_number_u32 (
 						& binary_header.gid)),
 
-				size: try! (
-					tar_number_u64 (
-						& binary_header.size)),
+				size:
+					size,
+
+				blocks: 0
+					+ (size >> 9)
+					+ (if (size & 0x1ff) != 0 { 1 } else { 0 }),
 
 				mtime: try! (
 					tar_number_u64 (

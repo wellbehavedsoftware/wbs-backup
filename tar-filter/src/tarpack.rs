@@ -122,10 +122,6 @@ impl <'a, 'b> TarPacker <'a, 'b> {
 				& header_bytes)
 		);
 
-		let blocks = 0
-			+ (header.size >> 9)
-			+ (if (header.size & 0x1ff) != 0 { 1 } else { 0 });
-
 		match header.typeflag {
 
 			  tar::Type::Regular
@@ -143,21 +139,11 @@ impl <'a, 'b> TarPacker <'a, 'b> {
 						self.packer.defer (
 							header_bytes)));
 
-				// copy file
+				// process file
 
 				try! (
-					self.packer.align ());
-
-				let mut content_bytes: Vec <u8> =
-					vec! [0; 512 * blocks as usize];
-
-				try! (
-					self.input.read_exact (
-						& mut content_bytes));
-
-				try! (
-					self.packer.write (
-						& content_bytes));
+					self.process_one_file (
+						& header));
 
 			},
 
@@ -175,11 +161,11 @@ impl <'a, 'b> TarPacker <'a, 'b> {
 
 				let mut content_bytes: Vec <u8> =
 					Vec::with_capacity (
-						blocks as usize * 512);
+						header.blocks as usize * 512);
 
 				unsafe {
 					content_bytes.set_len (
-						blocks as usize * 512);
+						header.blocks as usize * 512);
 				}
 
 				try! (
@@ -194,6 +180,31 @@ impl <'a, 'b> TarPacker <'a, 'b> {
 			},
 
 		}
+
+		Ok (())
+
+	}
+
+	fn process_one_file (
+		& mut self,
+		header: & tar::Header,
+	) -> Result <(), TfError> {
+
+		// copy file
+
+		try! (
+			self.packer.align ());
+
+		let mut content_bytes: Vec <u8> =
+			vec! [0; 512 * header.blocks as usize];
+
+		try! (
+			self.input.read_exact (
+				& mut content_bytes));
+
+		try! (
+			self.packer.write (
+				& content_bytes));
 
 		Ok (())
 
