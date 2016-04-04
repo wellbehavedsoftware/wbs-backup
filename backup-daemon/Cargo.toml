@@ -1,6 +1,6 @@
 [package]
 name = "wbs-backup"
-version = "0.1.7"
+version = "0.1.8"
 authors = [ "James Pharaoh <james@wellbehavedsoftware.com>" ]
 description = "Simple daemon process to execute backup scripts"
 homepage = "https://github.com/wellbehavedsoftware/wbs-backup"
