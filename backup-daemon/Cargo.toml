@@ -1,7 +1,10 @@
 [package]
 name = "wbs-backup"
-version = "0.0.0"
+version = "0.1.0"
 authors = [ "James Pharaoh <james@wellbehavedsoftware.com>" ]
+description = "Simple daemon process to execute backup scripts"
+homepage = "https://github.com/wellbehavedsoftware/backup-daemon"
+license = "MIT"
 
 [[bin]]
 name = "backup-daemon"
