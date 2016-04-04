@@ -12,12 +12,18 @@ archive="$full_name.tar.xz"
 release="target/release"
 local_dist="dist/$full_name"
 wbs_dist="ubuntu@dist.vpn.wellbehavedsoftware.com:dist/$name"
+release_date="$(date +'%A, %-d %B %Y')"
 
-# ---------- update version number
+# ---------- update version number etc
 
 sed --in-place --regexp-extended \
-	"s/^version = \".*\"\$/version = \"$version\"/" \
+	--expression "s/^version = \".*\"\$/version = \"$version\"/" \
 	Cargo.toml
+
+sed --in-place --regexp-extended \
+	--expression "s/^Version: .*\$/Version: $version/" \
+	--expression "s/^Release date: .*\$/Release date: $release_date/" \
+	README.md
 
 # ---------- build
 
@@ -41,7 +47,7 @@ tar --create --xz \
 
 # ------ finalise
 
-git add Cargo.toml Cargo.lock
+git add Cargo.toml Cargo.lock README.md
 git commit -m "release $full_name"
 
 git tag "$full_name"
