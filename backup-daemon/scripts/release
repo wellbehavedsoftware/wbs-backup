@@ -1,0 +1,56 @@
+#!/bin/bash
+
+set -euf -o pipefail
+
+# ---------- setup
+
+project="wbs-backup"
+name="wbs-backup-daemon"
+version="$1"
+full_name="$name-$version"
+archive="$full_name.tar.xz"
+release="target/release"
+local_dist="dist/$full_name"
+wbs_dist="ubuntu@dist.vpn.wellbehavedsoftware.com:dist/$name"
+
+# ---------- update version number
+
+sed --in-place --regexp-extended \
+	"s/^version = \".*\"\$/version = \"$version\"/" \
+	Cargo.toml
+
+# ---------- build
+
+cargo clean
+cargo build --release
+
+# ---------- create tarball
+
+mkdir -p "$local_dist"
+mkdir -p "$local_dist/bin"
+mkdir -p "$local_dist/share/doc/$full_name"
+
+cp "$release/backup-daemon" "$local_dist/bin/"
+cp "LICENSE" "$local_dist/share/doc/$full_name/"
+cp "README.md" "$local_dist/share/doc/$full_name/"
+
+tar --create --xz \
+	--directory "dist" \
+	--file "dist/$archive" \
+	"$full_name"
+
+# ------ finalise
+
+git add Cargo.toml Cargo.lock
+git commit -m "release $full_name"
+
+git tag "$full_name"
+
+git push origin "$full_name"
+git push github "$full_name"
+
+scp "dist/$archive" "$wbs_dist/$archive"
+
+cargo publish
+
+# ex: noet ts=4 filetype=bash
