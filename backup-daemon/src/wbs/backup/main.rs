@@ -2,6 +2,7 @@ extern crate time;
 
 use std::cmp::Ordering;
 use std::thread;
+use std::time::Duration;
 
 use wbs::backup::config::*;
 use wbs::backup::run::*;
@@ -142,7 +143,8 @@ pub fn main_loop (
 
 		loop_once (config, state);
 
-		thread::sleep_ms (1000);
+		thread::sleep (
+			Duration::from_millis (1000));
 
 	}
 
