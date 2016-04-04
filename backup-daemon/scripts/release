@@ -14,23 +14,33 @@ local_dist="dist/$full_name"
 wbs_dist="ubuntu@dist.vpn.wellbehavedsoftware.com:dist/$name"
 release_date="$(date +'%A, %-d %B %Y')"
 
-# ---------- update version number etc
+echo
+echo "========== upload to cargo =========="
+echo
+
+echo "  Cargo.toml"
 
 sed --in-place --regexp-extended \
 	--expression "s/^version = \".*\"\$/version = \"$version\"/" \
 	Cargo.toml
+
+echo "  README.md"
 
 sed --in-place --regexp-extended \
 	--expression "s/^Version: .*\$/Version: $version/" \
 	--expression "s/^Release date: .*\$/Release date: $release_date/" \
 	README.md
 
-# ---------- build
+echo
+echo "========== perform clean build =========="
+echo
 
 cargo clean
 cargo build --release
 
-# ---------- create tarball
+echo
+echo "========== create tar release =========="
+echo
 
 mkdir -p "$local_dist"
 mkdir -p "$local_dist/bin"
@@ -45,18 +55,30 @@ tar --create --xz \
 	--file "dist/$archive" \
 	"$full_name"
 
-# ------ finalise
+echo
+echo "========== git commit and push =========="
+echo
 
 git add Cargo.toml Cargo.lock README.md
 git commit -m "release $full_name"
 
 git tag "$full_name"
-
 git push origin "$full_name"
-git push github "$full_name"
+
+echo
+echo "========== upload to general dist =========="
+echo
 
 scp "dist/$archive" "$wbs_dist/$archive"
 
+echo
+echo "========== upload to cargo =========="
+echo
+
 cargo publish
+
+echo
+echo "========== complete =========="
+echo
 
 # ex: noet ts=4 filetype=bash
