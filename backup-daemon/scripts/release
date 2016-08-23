@@ -15,21 +15,21 @@ wbs_dist="ubuntu@dist.vpn.wellbehavedsoftware.com:dist/$name"
 release_date="$(date +'%A, %-d %B %Y')"
 
 echo
-echo "========== upload to cargo =========="
+echo "========== update version numbers =========="
 echo
 
 echo "  Cargo.toml"
 
 sed --in-place --regexp-extended \
 	--expression "s/^version = \".*\"\$/version = \"$version\"/" \
-	Cargo.toml
+	"Cargo.toml"
 
 echo "  README.md"
 
 sed --in-place --regexp-extended \
 	--expression "s/^Version: .*\$/Version: $version/" \
 	--expression "s/^Release date: .*\$/Release date: $release_date/" \
-	README.md
+	"README.md"
 
 echo
 echo "========== perform clean build =========="
