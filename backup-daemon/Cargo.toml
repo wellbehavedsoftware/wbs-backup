@@ -6,6 +6,14 @@ description = "Simple daemon process to execute backup scripts"
 homepage = "https://github.com/wellbehavedsoftware/wbs-backup"
 license = "MIT"
 
+include = [
+	"Cargo.toml",
+	"LICESE",
+	"README.md",
+	"scripts/**/*",
+	"src/**/*"
+]
+
 [[bin]]
 name = "backup-daemon"
 
