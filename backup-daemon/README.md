@@ -1,8 +1,8 @@
 # WBS Backup Daemon
 
 Homepage: "https://github.com/wellbehavedsoftware/wbs-backup"
-Version: 0.1.14
-Release date: Monday, 4 April 2016
+Version: 1.1.15
+Release date: Tuesday, 23 August 2016
 License: MIT
 Authors: James Pharaoh <james@wellbehavedsoftware.com>
 

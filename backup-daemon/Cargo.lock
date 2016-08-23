@@ -1,6 +1,6 @@
 [root]
 name = "wbs-backup-daemon"
-version = "0.1.14"
+version = "1.1.15"
 dependencies = [
  "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
