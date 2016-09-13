@@ -1,11 +1,12 @@
 [package]
 
 name = "tar-filter"
-version = "0.0.0"
+version = "1.0.0"
 authors = [
-	"James Pharaoh <james@wellbehavedsoftware.com>",
+	"James Pharaoh <james@pharaoh.uk>",
 ]
 
-[dependencies.libc]
-[dependencies.protobuf]
-[dependencies.rustc-serialize]
+[dependencies]
+libc = '0.2'
+protobuf = '1.0'
+rustc-serialize = '0.3'

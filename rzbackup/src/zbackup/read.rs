@@ -8,41 +8,46 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 
-use compress::lzma;
 use misc::*;
+use compress::lzma;
+
 use zbackup::data::*;
 use zbackup::proto;
 
 pub fn read_storage_info <P: AsRef <Path>> (
 	path: P,
-) -> Result <proto::StorageInfo, TfError> {
+) -> Result <proto::StorageInfo, String> {
 
 	// open file
 
 	let mut input =
 		try! (
-			File::open (
-				path));
+			io_result (
+				File::open (
+					path)));
 
 	let mut coded_input_stream =
 		CodedInputStream::new (
-			&mut input);
+			& mut input);
 
 	// read header
 
 	let header_length =
 		try! (
-			coded_input_stream.read_raw_varint32 ());
+			protobuf_result (
+				coded_input_stream.read_raw_varint32 ()));
 
 	let header_old_limit =
 		try! (
-			coded_input_stream.push_limit (
-				header_length));
+			protobuf_result (
+				coded_input_stream.push_limit (
+					header_length)));
 
 	let file_header =
 		try! (
-			protobuf::core::parse_from::<proto::FileHeader> (
-				&mut coded_input_stream));
+			protobuf_result (
+				protobuf::core::parse_from::<proto::FileHeader> (
+					& mut coded_input_stream)));
 
 	if file_header.get_version () != 1 {
 
@@ -59,17 +64,20 @@ pub fn read_storage_info <P: AsRef <Path>> (
 
 	let storage_info_length =
 		try! (
-			coded_input_stream.read_raw_varint32 ());
+			protobuf_result (
+				coded_input_stream.read_raw_varint32 ()));
 
 	let storage_info_old_limit =
 		try! (
-			coded_input_stream.push_limit (
-				storage_info_length));
+			protobuf_result (
+				coded_input_stream.push_limit (
+					storage_info_length)));
 
 	let storage_info =
 		try! (
-			protobuf::core::parse_from::<proto::StorageInfo> (
-				&mut coded_input_stream));
+			protobuf_result (
+				protobuf::core::parse_from::<proto::StorageInfo> (
+					& mut coded_input_stream)));
 
 	coded_input_stream.pop_limit (
 		storage_info_old_limit);
@@ -80,34 +88,38 @@ pub fn read_storage_info <P: AsRef <Path>> (
 
 pub fn read_backup_file <P: AsRef <Path>> (
 	path: P,
-) -> Result <proto::BackupInfo, TfError> {
+) -> Result <proto::BackupInfo, String> {
 
 	// open file
 
 	let mut input =
 		try! (
-			File::open (
-				path));
+			io_result (
+				File::open (
+					path)));
 
 	let mut coded_input_stream =
 		CodedInputStream::new (
-			&mut input);
+			& mut input);
 
 	// read header
 
 	let header_length =
 		try! (
-			coded_input_stream.read_raw_varint32 ());
+			protobuf_result (
+				coded_input_stream.read_raw_varint32 ()));
 
 	let header_old_limit =
 		try! (
-			coded_input_stream.push_limit (
-				header_length));
+			protobuf_result (
+				coded_input_stream.push_limit (
+					header_length)));
 
 	let file_header =
 		try! (
-			protobuf::core::parse_from::<proto::FileHeader> (
-				&mut coded_input_stream));
+			protobuf_result (
+				protobuf::core::parse_from::<proto::FileHeader> (
+					& mut coded_input_stream)));
 
 	if file_header.get_version () != 1 {
 
@@ -124,17 +136,20 @@ pub fn read_backup_file <P: AsRef <Path>> (
 
 	let backup_info_length =
 		try! (
-			coded_input_stream.read_raw_varint32 ());
+			protobuf_result (
+				coded_input_stream.read_raw_varint32 ()));
 
 	let backup_info_old_limit =
 		try! (
-			coded_input_stream.push_limit (
-				backup_info_length));
+			protobuf_result (
+				coded_input_stream.push_limit (
+					backup_info_length)));
 
 	let backup_info =
 		try! (
-			protobuf::core::parse_from::<proto::BackupInfo> (
-				&mut coded_input_stream));
+			protobuf_result (
+				protobuf::core::parse_from::<proto::BackupInfo> (
+					& mut coded_input_stream)));
 
 	coded_input_stream.pop_limit (
 		backup_info_old_limit);
@@ -145,7 +160,7 @@ pub fn read_backup_file <P: AsRef <Path>> (
 
 pub fn read_index <P: AsRef <Path>> (
 	path: P,
-) -> Result <Vec <IndexEntry>, TfError> {
+) -> Result <Vec <IndexEntry>, String> {
 
 	let mut index_entries: Vec <IndexEntry> =
 		vec! ();
@@ -154,8 +169,9 @@ pub fn read_index <P: AsRef <Path>> (
 
 	let mut input =
 		try! (
-			File::open (
-				path));
+			io_result (
+				File::open (
+					path)));
 
 	let mut coded_input_stream =
 		CodedInputStream::new (
@@ -165,17 +181,20 @@ pub fn read_index <P: AsRef <Path>> (
 
 	let header_length =
 		try! (
-			coded_input_stream.read_raw_varint32 ());
+			protobuf_result (
+				coded_input_stream.read_raw_varint32 ()));
 
 	let header_old_limit =
 		try! (
-			coded_input_stream.push_limit (
-				header_length));
+			protobuf_result (
+				coded_input_stream.push_limit (
+					header_length)));
 
 	let file_header =
 		try! (
-			protobuf::core::parse_from::<proto::FileHeader> (
-				&mut coded_input_stream));
+			protobuf_result (
+				protobuf::core::parse_from::<proto::FileHeader> (
+					& mut coded_input_stream)));
 
 	if file_header.get_version () != 1 {
 
@@ -194,17 +213,20 @@ pub fn read_index <P: AsRef <Path>> (
 
 		let index_bundle_header_length =
 			try! (
-				coded_input_stream.read_raw_varint32 ());
+				protobuf_result (
+					coded_input_stream.read_raw_varint32 ()));
 
 		let index_bundle_header_old_limit =
 			try! (
-				coded_input_stream.push_limit (
-					index_bundle_header_length));
+				protobuf_result (
+					coded_input_stream.push_limit (
+						index_bundle_header_length)));
 
 		let index_bundle_header =
 			try! (
-				protobuf::core::parse_from::<proto::IndexBundleHeader> (
-					&mut coded_input_stream));
+				protobuf_result (
+					protobuf::core::parse_from::<proto::IndexBundleHeader> (
+						& mut coded_input_stream)));
 
 		coded_input_stream.pop_limit (
 			index_bundle_header_old_limit);
@@ -217,17 +239,20 @@ pub fn read_index <P: AsRef <Path>> (
 
 		let bundle_info_length =
 			try! (
-				coded_input_stream.read_raw_varint32 ());
+				protobuf_result (
+					coded_input_stream.read_raw_varint32 ()));
 
 		let bundle_info_old_limit =
 			try! (
-				coded_input_stream.push_limit (
-					bundle_info_length));
+				protobuf_result (
+					coded_input_stream.push_limit (
+						bundle_info_length)));
 
 		let bundle_info =
 			try! (
-				protobuf::core::parse_from::<proto::BundleInfo> (
-					&mut coded_input_stream));
+				protobuf_result (
+					protobuf::core::parse_from::<proto::BundleInfo> (
+						& mut coded_input_stream)));
 
 		coded_input_stream.pop_limit (
 			bundle_info_old_limit);
@@ -244,14 +269,15 @@ pub fn read_index <P: AsRef <Path>> (
 
 pub fn read_bundle <P: AsRef <Path>> (
 	path: P,
-) -> Result <Vec <([u8; 24], Vec <u8>)>, TfError> {
+) -> Result <Vec <([u8; 24], Vec <u8>)>, String> {
 
 	// open file
 
 	let input =
 		try! (
-			File::open (
-				path));
+			io_result (
+				File::open (
+					path)));
 
 	let mut buf_input =
 		BufReader::new (
@@ -267,23 +293,27 @@ pub fn read_bundle <P: AsRef <Path>> (
 
 		let header_length =
 			try! (
-				coded_input_stream.read_raw_varint32 ());
+				protobuf_result (
+					coded_input_stream.read_raw_varint32 ()));
 
 		let header_old_limit =
 			try! (
-				coded_input_stream.push_limit (
-					header_length));
+				protobuf_result (
+					coded_input_stream.push_limit (
+						header_length)));
 
 		let file_header =
 			try! (
-				protobuf::core::parse_from::<proto::FileHeader> (
-					&mut coded_input_stream));
+				protobuf_result (
+					protobuf::core::parse_from::<proto::FileHeader> (
+						&mut coded_input_stream)));
 
 		if file_header.get_version () != 1 {
 
-			panic! (
-				"Unsupported backup version {}",
-				file_header.get_version ());
+			return Err (
+				format! (
+					"Unsupported backup version {}",
+					file_header.get_version ()));
 
 		}
 
@@ -294,17 +324,20 @@ pub fn read_bundle <P: AsRef <Path>> (
 
 		let bundle_info_length =
 			try! (
-				coded_input_stream.read_raw_varint32 ());
+				protobuf_result (
+					coded_input_stream.read_raw_varint32 ()));
 
 		let bundle_info_old_limit =
 			try! (
-				coded_input_stream.push_limit (
-					bundle_info_length));
+				protobuf_result (
+					coded_input_stream.push_limit (
+						bundle_info_length)));
 
 		let bundle_info =
 			try! (
-				protobuf::core::parse_from::<proto::BundleInfo> (
-					&mut coded_input_stream));
+				protobuf_result (
+					protobuf::core::parse_from::<proto::BundleInfo> (
+						& mut coded_input_stream)));
 
 		coded_input_stream.pop_limit (
 			bundle_info_old_limit);
@@ -316,9 +349,10 @@ pub fn read_bundle <P: AsRef <Path>> (
 	// skip checksum
 
 	try! (
-		buf_input.seek (
-			SeekFrom::Current (4)));
-
+		io_result (
+			buf_input.seek (
+				SeekFrom::Current (4))));
+	
 	// decode compressed data
 
 	let mut chunks: Vec <([u8; 24], Vec <u8>)> =
@@ -345,8 +379,9 @@ pub fn read_bundle <P: AsRef <Path>> (
 		}
 
 		try! (
-			lzma_reader.read_exact (
-				&mut chunk_bytes));
+			io_result (
+				lzma_reader.read_exact (
+					& mut chunk_bytes)));
 
 		chunks.push (
 			(

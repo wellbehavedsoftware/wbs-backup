@@ -6,20 +6,21 @@ use rustc_serialize::hex::ToHex;
 use std::cmp;
 use std::io;
 use std::io::Cursor;
-use std::rc::Rc;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
+use std::sync::Arc;
 
-use misc::*;
+use ::misc::*;
+
 use zbackup::proto;
-use zbackup::repo::ZBackup;
+use zbackup::repo::Repository;
 
 enum InstructionRefContent {
 
 	Chunk ([u8; 24]),
-	Bytes (Rc <Vec <u8>>),
+	Bytes (Arc <Vec <u8>>),
 
 }
 
@@ -34,12 +35,12 @@ struct InstructionRef {
 
 pub struct RandomAccess <'a> {
 
-	repo: & 'a mut ZBackup,
+	repo: & 'a mut Repository,
 	instruction_refs: Vec <InstructionRef>,
 	size: u64,
 
 	position: u64,
-	chunk_bytes: Rc <Vec <u8>>,
+	chunk_bytes: Arc <Vec <u8>>,
 	chunk_position: u64,
 
 }
@@ -47,9 +48,9 @@ pub struct RandomAccess <'a> {
 impl <'a> RandomAccess <'a> {
 
 	pub fn new (
-		repo: & 'a mut ZBackup,
+		repo: & 'a mut Repository,
 		backup_name: & str,
-	) -> Result <RandomAccess <'a>, TfError> {
+	) -> Result <RandomAccess <'a>, String> {
 
 		let mut input =
 			Cursor::new (
@@ -59,28 +60,33 @@ impl <'a> RandomAccess <'a> {
 
 		let mut coded_input_stream =
 			CodedInputStream::new (
-				&mut input);
+				& mut input);
 
 		let mut instruction_refs: Vec <InstructionRef> =
 			vec! ();
 
 		let mut offset: u64 = 0;
 
-		while ! try! (coded_input_stream.eof ()) {
+		while ! try! (
+			protobuf_result (
+				coded_input_stream.eof ())) {
 
 			let instruction_length =
 				try! (
-					coded_input_stream.read_raw_varint32 ());
+					protobuf_result (
+						coded_input_stream.read_raw_varint32 ()));
 
 			let instruction_old_limit =
 				try! (
-					coded_input_stream.push_limit (
-						instruction_length));
+					protobuf_result (
+						coded_input_stream.push_limit (
+							instruction_length)));
 
 			let backup_instruction =
 				try! (
-					protobuf::core::parse_from::<proto::BackupInstruction> (
-						&mut coded_input_stream));
+					protobuf_result (
+						protobuf::core::parse_from::<proto::BackupInstruction> (
+							& mut coded_input_stream)));
 
 			coded_input_stream.pop_limit (
 				instruction_old_limit);
@@ -130,7 +136,7 @@ impl <'a> RandomAccess <'a> {
 
 					content:
 						InstructionRefContent::Bytes (
-							Rc::new (
+							Arc::new (
 								bytes.to_owned ())),
 
 					start:
@@ -155,7 +161,7 @@ impl <'a> RandomAccess <'a> {
 			size: offset,
 
 			position: 0,
-			chunk_bytes: Rc::new (vec! ()),
+			chunk_bytes: Arc::new (vec! ()),
 			chunk_position: 0,
 
 		})
@@ -373,7 +379,7 @@ impl <'a> Seek for RandomAccess <'a> {
 			Err (_) => {
 
 				self.chunk_bytes =
-					Rc::new (
+					Arc::new (
 						vec! ());
 
 				self.chunk_position =

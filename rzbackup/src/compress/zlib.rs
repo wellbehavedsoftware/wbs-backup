@@ -4,8 +4,6 @@ use libc::c_void;
 use std::mem;
 use std::ptr;
 
-use misc::*;
-
 #[ repr (C) ]
 struct ZlibStream {
 
@@ -109,7 +107,7 @@ const Z_DEFAULT_STRATEGY: c_int = 0;
 #[ allow (dead_code) ]
 pub fn compress (
 	input: & [u8],
-) -> Result <Vec <u8>, TfError> {
+) -> Result <Vec <u8>, String> {
 
 	// create structure
 
@@ -154,12 +152,10 @@ pub fn compress (
 
 	if init_result != Z_OK {
 
-		return Err (TfError {
-			error_message:
-				format! (
-					"Deflate init returned {}",
-					init_result),
-		});
+		return Err (
+			format! (
+				"Deflate init returned {}",
+					init_result));
 
 	}
 
@@ -216,12 +212,10 @@ pub fn compress (
 
 			// TODO clean up!
 
-			return Err (TfError {
-				error_message:
-					format! (
-						"Deflate returned {}",
-						init_result),
-			});
+			return Err (
+				format! (
+					"Deflate returned {}",
+					init_result));
 
 		}
 
@@ -234,7 +228,7 @@ pub fn compress (
 #[ allow (dead_code) ]
 pub fn decompress (
 	input: & [u8],
-) -> Result <Vec <u8>, TfError> {
+) -> Result <Vec <u8>, String> {
 
 	// create structure
 
@@ -275,12 +269,10 @@ pub fn decompress (
 
 	if init_result != Z_OK {
 
-		return Err (TfError {
-			error_message:
-				format! (
-					"Deflate init returned {}",
-					init_result),
-		});
+		return Err (
+			format! (
+				"Deflate init returned {}",
+				init_result));
 
 	}
 
@@ -330,12 +322,10 @@ pub fn decompress (
 
 			// TODO clean up!
 
-			return Err (TfError {
-				error_message:
-					format! (
-						"Deflate returned {}",
-						init_result),
-			});
+			return Err (
+				format! (
+					"Deflate returned {}",
+					init_result));
 
 		}
 

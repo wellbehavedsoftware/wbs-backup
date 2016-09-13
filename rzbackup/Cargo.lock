@@ -1,6 +1,6 @@
 [root]
-name = "tar-filter"
-version = "1.0.0"
+name = "rzbackup"
+version = "0.1.0"
 dependencies = [
  "libc 0.2.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "protobuf 1.0.24 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -15,7 +15,7 @@ wbs_dist="ubuntu@dist.vpn.wellbehavedsoftware.com:dist/$name"
 release_date="$(date +'%A, %-d %B %Y')"
 
 echo
-echo "========== update version numbers =========="
+echo "========== update version numbersy =========="
 echo
 
 echo "  Cargo.toml"
@@ -44,11 +44,11 @@ echo
 
 mkdir -p "$local_dist"
 mkdir -p "$local_dist/bin"
-mkdir -p "$local_dist/share/doc/$full_name"
+mkdir -p "$local_dist/doc"
 
 cp "$release/backup-daemon" "$local_dist/bin/"
-cp "LICENSE" "$local_dist/share/doc/$full_name/"
-cp "README.md" "$local_dist/share/doc/$full_name/"
+cp "LICENSE" "$local_dist/doc/"
+cp "README.md" "$local_dist/doc/"
 
 tar --create --xz \
 	--directory "dist" \

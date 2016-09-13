@@ -8,32 +8,33 @@ use std::fs;
 use std::io::Cursor;
 use std::io::Read;
 use std::io::Write;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use misc::*;
-use zbackup::*;
+
 use zbackup::proto;
+use zbackup::randaccess::*;
 use zbackup::read::*;
 
 const CACHE_MAX_SIZE: usize =
 	0x10000;
 
-struct MasterIndexEntry {
+pub struct MasterIndexEntry {
 	pub bundle_id: [u8; 24],
 	pub size: u64,
 }
 
-pub struct ZBackup {
+pub struct Repository {
 	path: String,
 	master_index: HashMap <[u8; 24], MasterIndexEntry>,
-	chunk_cache: HashMap <[u8; 24], Rc <Vec <u8>>>,
+	chunk_cache: HashMap <[u8; 24], Arc <Vec <u8>>>,
 }
 
-impl ZBackup {
+impl Repository {
 
 	pub fn open (
-		repository_path: &str,
-	) -> Result <ZBackup, TfError> {
+		repository_path: & str,
+	) -> Result <Repository, String> {
 
 		// load info file
 
@@ -59,15 +60,17 @@ impl ZBackup {
 		let mut count: u64 = 0;
 
 		for dir_entry_or_error in try! (
-			fs::read_dir (
-				format! (
-					"{}/index",
-					repository_path))
+			io_result (
+				fs::read_dir (
+					format! (
+						"{}/index",
+						repository_path)))
 		) {
 
 			let dir_entry =
 				try! (
-					dir_entry_or_error);
+					io_result (
+						dir_entry_or_error));
 
 			let file_name =
 				dir_entry.file_name ();
@@ -118,7 +121,7 @@ impl ZBackup {
 
 		// return
 
-		Ok (ZBackup {
+		Ok (Repository {
 			path: repository_path.to_string (),
 			master_index: master_index,
 			chunk_cache: HashMap::new (),
@@ -128,8 +131,8 @@ impl ZBackup {
 
 	pub fn read_and_expand_backup (
 		& mut self,
-		backup_name: &str,
-	) -> Result <Vec <u8>, TfError> {
+		backup_name: & str,
+	) -> Result <Vec <u8>, String> {
 
 		// load backup
 
@@ -184,7 +187,7 @@ impl ZBackup {
 		& mut self,
 		backup_name: & str,
 		output: & mut Write,
-	) -> Result <(), TfError> {
+	) -> Result <(), String> {
 
 		let mut input =
 			Cursor::new (
@@ -221,7 +224,7 @@ impl ZBackup {
 		& mut self,
 		backup_name: & str,
 		output: & mut Write,
-	) -> Result <(), TfError> {
+	) -> Result <(), String> {
 
 		stderr! (
 			"Loading backup {}",
@@ -253,16 +256,19 @@ impl ZBackup {
 
 			let bytes_read =
 				try! (
-					input.read (
-						& mut buffer));
+					io_result (
+						input.read (
+							& mut buffer)));
 
 			if bytes_read == 0 {
 				break;
 			}
 
 			try! (
-				output.write (
-					& buffer [0 .. bytes_read ]));
+				io_result (
+					output.write (
+						& buffer [
+							0 .. bytes_read ])));
 
 		}
 
@@ -277,7 +283,7 @@ impl ZBackup {
 		& mut self,
 		backup_instruction: & proto::BackupInstruction,
 		output: & mut Write,
-	) -> Result <(), TfError> {
+	) -> Result <(), String> {
 
 		if backup_instruction.has_chunk_to_emit () {
 
@@ -290,16 +296,18 @@ impl ZBackup {
 					chunk_id));
 
 			try! (
-				output.write (
-					& chunk_data));
+				io_result (
+					output.write (
+						& chunk_data)));
 
 		}
 
 		if backup_instruction.has_bytes_to_emit () {
 
 			try! (
-				output.write (
-					backup_instruction.get_bytes_to_emit ()));
+				io_result (
+					output.write (
+						backup_instruction.get_bytes_to_emit ())));
 
 		}
 
@@ -312,7 +320,7 @@ impl ZBackup {
 		input: & mut Read,
 		output: & mut Write,
 		progress: & Fn (u64),
-	) -> Result <(), TfError> {
+	) -> Result <(), String> {
 
 		let mut coded_input_stream =
 			CodedInputStream::new (
@@ -320,21 +328,27 @@ impl ZBackup {
 
 		let mut count: u64 = 0;
 
-		while ! try! (coded_input_stream.eof ()) {
+		while ! try! (
+			protobuf_result (
+				coded_input_stream.eof ())
+		) {
 
 			let instruction_length =
 				try! (
-					coded_input_stream.read_raw_varint32 ());
+					protobuf_result (
+						coded_input_stream.read_raw_varint32 ()));
 
 			let instruction_old_limit =
 				try! (
-					coded_input_stream.push_limit (
-						instruction_length));
+					protobuf_result (
+						coded_input_stream.push_limit (
+							instruction_length)));
 
 			let backup_instruction =
 				try! (
-					protobuf::core::parse_from::<proto::BackupInstruction> (
-						&mut coded_input_stream));
+					protobuf_result (
+						protobuf::core::parse_from::<proto::BackupInstruction> (
+							&mut coded_input_stream)));
 
 			coded_input_stream.pop_limit (
 				instruction_old_limit);
@@ -358,7 +372,7 @@ impl ZBackup {
 	pub fn get_chunk (
 		& mut self,
 		chunk_id: [u8; 24],
-	) -> Result <Rc <Vec <u8>>, TfError> {
+	) -> Result <Arc <Vec <u8>>, String> {
 
 		if ! self.chunk_cache.contains_key (& chunk_id) {
 
@@ -375,12 +389,12 @@ impl ZBackup {
 					value,
 
 				None => {
-					return Err (TfError {
-						error_message:
-							format! (
-								"Missing chunk: {}",
-								chunk_id.to_hex ()),
-					});
+
+					return Err (
+						format! (
+							"Missing chunk: {}",
+							chunk_id.to_hex ()));
+
 				},
 
 			};
@@ -398,7 +412,7 @@ impl ZBackup {
 
 				self.chunk_cache.insert (
 					found_chunk_id,
-					Rc::new (
+					Arc::new (
 						found_chunk_data));
 
 			}
@@ -418,7 +432,7 @@ impl ZBackup {
 	pub fn get_index_entry (
 		& mut self,
 		chunk_id: & [u8; 24],
-	) -> Result <& MasterIndexEntry, TfError> {
+	) -> Result <& MasterIndexEntry, String> {
 
 		return match self.master_index.get (
 			chunk_id,
@@ -428,12 +442,11 @@ impl ZBackup {
 				Ok (value),
 
 			None =>
-				Err (TfError {
-					error_message:
-						format! (
-							"Missing chunk: {}",
-							chunk_id.to_hex ()),
-				}),
+				Err (
+					format! (
+						"Missing chunk: {}",
+						chunk_id.to_hex ())
+				),
 
 		};
 
@@ -442,7 +455,7 @@ impl ZBackup {
 	pub fn open_backup (
 		& mut self,
 		backup_name: & str,
-	) -> Result <RandomAccess, TfError> {
+	) -> Result <RandomAccess, String> {
 
 		RandomAccess::new (
 			self,

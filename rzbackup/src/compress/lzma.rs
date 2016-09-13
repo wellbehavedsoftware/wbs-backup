@@ -5,8 +5,6 @@ use std::io;
 use std::io::Read;
 use std::ptr;
 
-use misc::*;
-
 const READ_BUFFER_SIZE: usize =
 	0x100000;
 
@@ -90,7 +88,7 @@ impl <'a> LzmaReader <'a> {
 
 	pub fn new (
 		input: & 'a mut Read,
-	) -> Result <LzmaReader <'a>, TfError> {
+	) -> Result <LzmaReader <'a>, String> {
 
 		let mut lzma_stream = LzmaStream {
 
@@ -132,13 +130,9 @@ impl <'a> LzmaReader <'a> {
 		if init_result != LZMA_OK {
 
 			return Err (
-				TfError {
-					error_message:
-						format! (
-							"Error initialising lzma decoder: {}",
-							init_result),
-				}
-			);
+				format! (
+					"Error initialising lzma decoder: {}",
+					init_result));
 
 		}
 
