@@ -23,3 +23,9 @@ at the start, and all of the tar headers contiguously at the end. It is designed
 to increase the deduplication efficiency of zbackup.
 
 This is a proof-of-concept, not yet used in production.
+
+## rzbackup
+
+This includes a partial clone of zbackup, and a server which is able to more
+efficiently perform repeated restore operations by keeping cached state around
+in memory.
