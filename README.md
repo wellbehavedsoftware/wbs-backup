@@ -29,3 +29,8 @@ This is a proof-of-concept, not yet used in production.
 This includes a partial clone of zbackup, and a server which is able to more
 efficiently perform repeated restore operations by keeping cached state around
 in memory.
+
+It is intended to evolve into a full zbackup clone, along with an advanced
+client/server model and other optimisations, and ideally a better implementation
+of the client/server protocol can be designed publicly and backported to
+ZBackup itself. 
