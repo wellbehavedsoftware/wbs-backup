@@ -16,7 +16,7 @@ peform the backup steps.
 It's used internally on many systems, but a bit rough around the edges, and
 probably not yet suitable for anyone else to adopt.
 
-[More information](tree/master/backup-daemon)
+[More information](backup-daemon)
 
 ## tar-filter
 
@@ -26,7 +26,7 @@ to increase the deduplication efficiency of zbackup.
 
 This is a proof-of-concept, not yet used in production.
 
-[More information](tree/master/tar-filter)
+[More information](tar-filter)
 
 ## rzbackup
 
@@ -39,4 +39,4 @@ client/server model and other optimisations, and ideally a better implementation
 of the client/server protocol can be designed publicly and backported to
 ZBackup itself. 
 
-[More information](tree/master/rzbackup)
+[More information](rzbackup)
