@@ -1,5 +1,7 @@
 use protobuf::ProtobufError;
 
+use std::error::Error;
+
 pub fn protobuf_result <Type> (
 	result: Result <Type, ProtobufError>,
 ) -> Result <Type, String> {
