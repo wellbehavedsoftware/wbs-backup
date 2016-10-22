@@ -4,10 +4,12 @@ set -euf -o pipefail
 
 # ---------- setup
 
+source "/etc/lsb-release"
+
 project="wbs-backup"
 name="wbs-backup-daemon"
 version="$1"
-full_name="$name-$version"
+full_name="$name-$version-$DISTRIB_CODENAME"
 archive="$full_name.tar.xz"
 release="target/release"
 local_dist="dist/$full_name"
