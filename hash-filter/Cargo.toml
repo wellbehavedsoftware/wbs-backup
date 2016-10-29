@@ -1,0 +1,12 @@
+[package]
+
+name = "hash-filter"
+version = "0.1.0"
+authors = [
+	"James Pharaoh <james@pharaoh.uk>"
+]
+
+[dependencies]
+clap = "*"
+
+# ex: noet ts=4 filetype=toml
