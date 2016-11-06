@@ -1,0 +1,9 @@
+name="hash-filter"
+
+contents=(
+	"hash-filter"
+)
+
+target="ubuntu@dist.wellbehavedsoftware.com:dist/hash-filter"
+
+# ex: noet ts=4 filetype=sh
