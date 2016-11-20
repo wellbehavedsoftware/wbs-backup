@@ -2,4 +2,4 @@
 
 This project has now moved to its own repository.
 
-Please visit [rust-btrfs.com](http://rust-btrfs.com).
+Please visit [btrfs-dedupe.com](http://btrfs-dedupe.com).
