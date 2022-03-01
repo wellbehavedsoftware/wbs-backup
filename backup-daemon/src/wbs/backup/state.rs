@@ -433,10 +433,10 @@ impl Global {
 		state_json: &str,
 	) -> Result<()> {
 
-		let mut file = try! { File::create (state_path_temp) };
+		let mut file = File::create (state_path_temp)?;
 
-		try! { write! (&mut file, "{}\n", & state_json.to_string ()) }
-		try! { file.sync_all () }
+		write! (&mut file, "{}\n", & state_json.to_string ())?;
+		file.sync_all ()?;
 
 		Ok (())
 
